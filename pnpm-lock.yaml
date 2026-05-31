@@ -24,7 +24,11 @@ importers:
         specifier: ^3.2.1
         version: 3.2.4
 
-  apps/api: {}
+  apps/api:
+    dependencies:
+      '@expandiq-agentkit/runtime-contracts':
+        specifier: workspace:*
+        version: link:../../packages/runtime-contracts
 
   apps/web: {}
 

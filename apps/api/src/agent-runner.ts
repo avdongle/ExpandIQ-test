@@ -1,3 +1,5 @@
+import { DEFAULT_TOOL_RETRIEVAL_TOP_K, retrieveTools } from "@expandiq-agentkit/runtime-contracts";
+
 import { mockLlm, type MockLlmResponse } from "./mock-llm.js";
 import { TOOLS, type ToolMetadata } from "./mock-tools.js";
 import type { JSONValue, SQLitePersistence, StepRecord } from "./sqlite-persistence.js";
@@ -5,18 +7,35 @@ import { dispatchTool } from "./tool-runtime.js";
 
 type TerminalReason = "step_cap" | "cost_cap" | "stuck" | "timeout" | "error" | "succeeded";
 
+export type AgentClock = {
+  nowIso(): string;
+  nowMs(): number;
+};
+
+type MockLlm = (request: {
+  goal: string;
+  past_steps: readonly StepRecord[];
+  candidate_tools: readonly ToolMetadata[];
+}) => MockLlmResponse;
+
 export type ExecuteMockAgentRunInput = {
   persistence: SQLitePersistence;
   runId: string;
   goal: string;
+  clock?: AgentClock;
   maxCostUsd?: number;
   maxRetries?: number;
   maxSteps?: number;
+  mockLlm?: MockLlm;
   registry?: readonly ToolMetadata[];
   stuckCallThreshold?: number;
+  timeoutMs?: number;
+  topK?: number;
 };
 
 export async function executeMockAgentRun({
+  clock = systemClock,
+  mockLlm: planner = mockLlm,
   persistence,
   runId,
   goal,
@@ -24,22 +43,31 @@ export async function executeMockAgentRun({
   maxRetries = 1,
   maxSteps = 10,
   registry = TOOLS,
-  stuckCallThreshold = 3
+  stuckCallThreshold = 3,
+  timeoutMs = 60_000,
+  topK = DEFAULT_TOOL_RETRIEVAL_TOP_K
 }: ExecuteMockAgentRunInput): Promise<void> {
-  persistence.createRun({ id: runId, goal });
+  persistence.createRun({ id: runId, goal, startedAt: clock.nowIso() });
 
   let totalCost = 0;
+  const startedAtMs = clock.nowMs();
+  const callCounts = new Map<string, number>();
 
   for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
+    if (clock.nowMs() - startedAtMs >= timeoutMs) {
+      finishRun(persistence, runId, "timeout", totalCost, clock);
+      return;
+    }
+
     const currentRun = persistence.readRun(runId);
     const pastSteps = currentRun?.steps ?? [];
     let response: MockLlmResponse;
 
     try {
-      response = mockLlm({
+      response = planner({
         goal,
         past_steps: pastSteps,
-        candidate_tools: registry
+        candidate_tools: retrieveTools(goal, registry, topK)
       });
     } catch (error) {
       persistence.persistStep({
@@ -52,15 +80,21 @@ export async function executeMockAgentRun({
           code: "MOCK_LLM_ERROR",
           message: error instanceof Error ? error.message : "Mock LLM planner failed."
         },
-        finishedAt: new Date().toISOString()
+        startedAt: clock.nowIso(),
+        finishedAt: clock.nowIso()
       });
-      finishRun(persistence, runId, "error", totalCost);
+      finishRun(persistence, runId, "error", totalCost, clock);
       return;
     }
 
     totalCost = roundCost(totalCost + response.cost);
 
     if (response.type === "final") {
+      if (totalCost >= maxCostUsd) {
+        finishRun(persistence, runId, "cost_cap", totalCost, clock);
+        return;
+      }
+
       persistence.persistStep({
         id: `${runId}-step-${stepNumber}`,
         runId,
@@ -68,12 +102,21 @@ export async function executeMockAgentRun({
         kind: "final",
         args: { type: "final" },
         result: { content: response.content, cost: response.cost },
-        finishedAt: new Date().toISOString()
+        startedAt: clock.nowIso(),
+        finishedAt: clock.nowIso()
       });
-      const terminalReason = totalCost > maxCostUsd ? "cost_cap" : "succeeded";
-      finishRun(persistence, runId, terminalReason, totalCost);
+      finishRun(persistence, runId, "succeeded", totalCost, clock, response.content);
       return;
     }
+
+    if (totalCost >= maxCostUsd) {
+      finishRun(persistence, runId, "cost_cap", totalCost, clock);
+      return;
+    }
+
+    const signature = toolCallSignature(response.tool, response.args);
+    const nextCallCount = (callCounts.get(signature) ?? 0) + 1;
+    callCounts.set(signature, nextCallCount);
 
     const toolResult = dispatchTool({
       tool: response.tool,
@@ -92,66 +135,64 @@ export async function executeMockAgentRun({
         cost: response.cost
       },
       result: toolResult as unknown as JSONValue,
-      finishedAt: new Date().toISOString()
+      startedAt: clock.nowIso(),
+      finishedAt: clock.nowIso()
     });
 
     if (!toolResult.ok) {
-      finishRun(persistence, runId, "error", totalCost);
+      finishRun(persistence, runId, "error", totalCost, clock);
       return;
     }
 
-    if (totalCost > maxCostUsd) {
-      finishRun(persistence, runId, "cost_cap", totalCost);
-      return;
-    }
-
-    const updatedRun = persistence.readRun(runId);
-    if (updatedRun !== null && isStuck(updatedRun.steps, stuckCallThreshold)) {
-      finishRun(persistence, runId, "stuck", totalCost);
+    if (nextCallCount >= stuckCallThreshold) {
+      finishRun(persistence, runId, "stuck", totalCost, clock);
       return;
     }
   }
 
-  finishRun(persistence, runId, "step_cap", totalCost);
+  finishRun(persistence, runId, "step_cap", totalCost, clock);
 }
 
 function finishRun(
   persistence: SQLitePersistence,
   runId: string,
   reason: TerminalReason,
-  totalCost: number
+  totalCost: number,
+  clock: AgentClock,
+  finalAnswer?: string
 ): void {
   persistence.markRunFinished(runId, {
     reason,
     totalCost,
-    finishedAt: new Date().toISOString()
+    finalAnswer,
+    finishedAt: clock.nowIso()
   });
 }
 
-function isStuck(steps: readonly StepRecord[], stuckCallThreshold: number): boolean {
-  const toolSteps = steps.filter((step) => step.kind === "tool_call");
-  const recentSteps = toolSteps.slice(-stuckCallThreshold);
-
-  if (recentSteps.length < stuckCallThreshold) {
-    return false;
-  }
-
-  const [firstStep] = recentSteps;
-  const firstSignature = toolCallSignature(firstStep);
-
-  return recentSteps.every((step) => toolCallSignature(step) === firstSignature);
+function toolCallSignature(tool: string, args: Record<string, string>): string {
+  return `${tool}:${canonicalJSONStringify(args)}`;
 }
 
-function toolCallSignature(step: StepRecord): string {
-  const args = step.args;
-
-  if (typeof args !== "object" || args === null || Array.isArray(args)) {
-    return JSON.stringify(args);
+function canonicalJSONStringify(value: JSONValue): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJSONStringify(item)).join(",")}]`;
   }
 
-  return JSON.stringify(args);
+  if (typeof value === "object" && value !== null) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJSONStringify(value[key] ?? null)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function roundCost(cost: number): number {
   return Number(cost.toFixed(6));
 }
+
+const systemClock: AgentClock = {
+  nowIso: () => new Date().toISOString(),
+  nowMs: () => performance.now()
+};

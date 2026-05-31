@@ -18,6 +18,7 @@ describe("SQLite persistence", () => {
       status: "running",
       reason: null,
       totalCost: 0,
+      finalAnswer: null,
       startedAt: "2026-05-31T01:00:00.000Z",
       finishedAt: null
     });
@@ -60,6 +61,7 @@ describe("SQLite persistence", () => {
       status: "finished",
       reason: "succeeded",
       totalCost: 0.42,
+      finalAnswer: "The follow-up is ready.",
       finishedAt: "2026-05-31T01:03:00.000Z"
     });
 
@@ -69,6 +71,7 @@ describe("SQLite persistence", () => {
       status: "finished",
       reason: "succeeded",
       totalCost: 0.42,
+      finalAnswer: "The follow-up is ready.",
       startedAt: "2026-05-31T01:00:00.000Z",
       finishedAt: "2026-05-31T01:03:00.000Z",
       steps: [
@@ -127,6 +130,7 @@ describe("SQLite persistence", () => {
       status: "finished",
       reason: "succeeded",
       totalCost: 1.25,
+      finalAnswer: "Done.",
       finishedAt: "2026-05-31T01:03:00.000Z"
     });
 
@@ -139,6 +143,7 @@ describe("SQLite persistence", () => {
       status: "finished",
       reason: "succeeded",
       totalCost: 1.25,
+      finalAnswer: "Done.",
       finishedAt: "2026-05-31T01:04:00.000Z"
     });
 

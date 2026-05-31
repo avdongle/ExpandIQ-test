@@ -1,4 +1,4 @@
-name: Copilot review to issue
+name: Copilot review to batched issue
 
 on:
   issue_comment:
@@ -12,57 +12,81 @@ permissions:
   contents: read
 
 jobs:
-  create-issue:
+  upsert-review-issue:
     runs-on: ubuntu-latest
     if: >
       contains(github.event.comment.user.login, 'copilot')
       || contains(github.event.comment.body, 'Copilot')
     steps:
-      - name: Create issue from Copilot review finding
-        uses: actions/github-script@v7
+      - uses: actions/github-script@v7
         with:
           script: |
             const comment = context.payload.comment;
             const issue = context.payload.issue;
             const pullRequest = context.payload.pull_request;
 
-            const prNumber = issue?.number ?? pullRequest?.number ?? "unknown";
-            const prUrl = issue?.html_url ?? pullRequest?.html_url ?? "";
-            const commentUrl = comment.html_url;
-            const body = comment.body ?? "";
+            const prNumber = issue?.number ?? pullRequest?.number;
+            if (!prNumber) return;
 
-            const firstLine = body
-              .split("\n")
-              .map((line) => line.trim())
-              .find((line) => line.length > 0) ?? "Copilot review finding";
+            const marker = `copilot-review-pr-${prNumber}`;
+            const title = `Copilot review findings for PR #${prNumber}`;
 
-            const title = `Copilot finding from PR #${prNumber}: ${firstLine.slice(0, 80)}`;
+            const finding = [
+              `---`,
+              ``,
+              `## Finding from ${new Date().toISOString()}`,
+              ``,
+              `Comment: ${comment.html_url}`,
+              ``,
+              comment.body
+            ].join("\n");
 
-            const issueBody = [
+            const existing = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:body ${marker}`
+            });
+
+            if (existing.data.items.length > 0) {
+              const target = existing.data.items[0];
+
+              const current = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: target.number
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: target.number,
+                body: `${current.data.body}\n\n${finding}`
+              });
+
+              return;
+            }
+
+            const body = [
+              `<!-- ${marker} -->`,
+              ``,
               `## Source`,
               ``,
-              `Copilot review finding on PR #${prNumber}`,
-              ``,
-              `PR: ${prUrl}`,
-              `Comment: ${commentUrl}`,
-              ``,
-              `## Finding`,
-              ``,
-              body,
+              `Copilot review findings from PR #${prNumber}`,
               ``,
               `## Acceptance Criteria`,
               ``,
-              `- Add or update a regression test that reproduces the issue where practical`,
-              `- Fix the underlying implementation`,
+              `- Triage each finding`,
+              `- Convert valid findings into tests where practical`,
+              `- Fix accepted findings`,
               `- Run lint, typecheck and tests`,
-              `- Open a PR that links back to this issue`
+              `- Open a PR that links back to this issue`,
+              ``,
+              finding
             ].join("\n");
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title,
-              body: issueBody,
+              body,
               labels: [
                 "copilot-review",
                 "must-fix-before-next-feature",

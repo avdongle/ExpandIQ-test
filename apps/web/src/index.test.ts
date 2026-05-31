@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getWebMetadata } from "./index.js";
+import { getWebMetadata } from "./index";
 
 describe("web metadata", () => {
   it("returns app metadata", () => {

@@ -35,6 +35,12 @@ Scenario selection is keyword-based:
 
 The report flow completes after three deterministic tool calls and a final response. The stuck flow repeats the same tool and args until the runner marks the run with `reason = "stuck"`. The cost-cap flow emits a high fixed cost so low budgets terminate with `reason = "cost_cap"`. The retry flow triggers one recoverable lookup error, retries within the runtime, then persists a successful logical step with retry metadata.
 
+## Tool execution and retry policy
+
+Tool calls go through one executor boundary in the API package. The executor validates the requested tool before calling a handler, converts every success or failure into the same `ToolResult` shape, catches raw handler exceptions as non-recoverable `TOOL_EXCEPTION` errors, and records retry metadata with the persisted step result.
+
+Recoverable tool errors are retried synchronously up to the configured `maxRetries` value, so total attempts are `maxRetries + 1`. Semantic errors such as unknown tools and validation failures are returned immediately without retry. `send_email` is marked non-idempotent in the mock registry and requires `args.idempotency_key`; the executor rejects the call before the handler runs when that key is missing.
+
 ## Runtime loop and guards
 
 `executeMockAgentRun` creates a SQLite run, then runs a synchronous deterministic loop against the mock LLM. Before every planner call it retrieves a narrowed top-K tool list from the registry and passes only `goal`, ordered `past_steps`, and `candidate_tools` into the mock LLM. Tool calls are dispatched through the mock tool runtime, persisted as ordered steps, and final answers are stored on the run plus a final step for replay.

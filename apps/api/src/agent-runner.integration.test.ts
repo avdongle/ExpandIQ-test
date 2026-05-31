@@ -308,4 +308,43 @@ describe("mock agent runner", () => {
 
     persistence.close();
   });
+
+  it("persists send_email idempotency validation failures from the executor", async () => {
+    const persistence = createSQLitePersistence(":memory:");
+
+    await executeMockAgentRun({
+      persistence,
+      runId: "run-email-idempotency",
+      goal: "Email a contact",
+      mockLlm() {
+        return {
+          type: "tool_call",
+          tool: "send_email",
+          args: { contactId: "contact-1", body: "Hello" },
+          cost: 0.001
+        };
+      }
+    });
+
+    const run = persistence.readRun("run-email-idempotency");
+    expect(run).toMatchObject({
+      status: "finished",
+      reason: "error",
+      totalCost: 0.001
+    });
+    expect(run?.steps).toHaveLength(1);
+    expect(run?.steps[0]?.result).toMatchObject({
+      ok: false,
+      error: {
+        code: "IDEMPOTENCY_KEY_REQUIRED",
+        recoverable: false
+      },
+      retry: {
+        attempts: 1,
+        recovered: false
+      }
+    });
+
+    persistence.close();
+  });
 });

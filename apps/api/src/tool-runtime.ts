@@ -1,19 +1,21 @@
+import type { ToolError, ToolMetadata, ToolResult } from "@expandiq-agentkit/runtime-contracts";
+
 import type { JSONValue } from "./sqlite-persistence.js";
+import { TOOLS } from "./mock-tools.js";
 
-type ToolError = {
-  code: string;
-  message: string;
-  recoverable: boolean;
-};
+export type ToolHandler = (
+  args: Record<string, string>,
+  context: { attempt: number }
+) => ToolResult<JSONValue>;
 
-type ToolResult<T> =
-  | { ok: true; data: T; error: null }
-  | { ok: false; data: null; error: ToolError };
+export type ToolHandlerRegistry = Readonly<Partial<Record<string, ToolHandler>>>;
 
 export type DispatchToolInput = {
   tool: string;
   args: Record<string, string>;
   maxRetries: number;
+  handlers?: ToolHandlerRegistry;
+  registry?: readonly ToolMetadata[];
 };
 
 export type DispatchToolResult = ToolResult<JSONValue> & {
@@ -31,13 +33,39 @@ export type DispatchToolResult = ToolResult<JSONValue> & {
 export function dispatchTool({
   tool,
   args,
-  maxRetries
+  maxRetries,
+  handlers = DEFAULT_TOOL_HANDLERS,
+  registry = TOOLS
 }: DispatchToolInput): DispatchToolResult {
   const errors: DispatchToolResult["retry"]["errors"] = [];
   const maxAttempts = maxRetries + 1;
+  const toolMetadata = registry.find((candidate) => candidate.id === tool);
+
+  if (toolMetadata === undefined) {
+    return failureResult(unknownToolError(tool), 1, false, errors);
+  }
+
+  const handler = handlers[tool];
+
+  if (handler === undefined) {
+    return failureResult(unknownToolError(tool), 1, false, errors);
+  }
+
+  if (toolMetadata?.idempotent === false && args.idempotency_key === undefined) {
+    return failureResult(
+      {
+        code: "IDEMPOTENCY_KEY_REQUIRED",
+        message: `${tool} requires args.idempotency_key before execution.`,
+        recoverable: false
+      },
+      1,
+      false,
+      errors
+    );
+  }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const result = invokeTool(tool, args, attempt);
+    const result = invokeHandler(handler, args, attempt);
 
     if (result.ok) {
       return {
@@ -67,53 +95,85 @@ export function dispatchTool({
   throw new Error("Tool dispatch exhausted attempts unexpectedly");
 }
 
-function invokeTool(
-  tool: string,
+function invokeHandler(
+  handler: ToolHandler,
   args: Record<string, string>,
   attempt: number
 ): ToolResult<JSONValue> {
-  if (tool === "search_docs") {
+  try {
+    return handler(args, { attempt });
+  } catch (error) {
     return {
-      ok: true,
-      data: { docIds: ["report-doc-1"], query: args.query },
-      error: null
+      ok: false,
+      data: null,
+      error: {
+        code: "TOOL_EXCEPTION",
+        message: error instanceof Error ? error.message : "Tool handler threw an unknown error.",
+        recoverable: false
+      }
     };
   }
+}
 
-  if (tool === "fetch_doc") {
-    return {
-      ok: true,
-      data: {
-        docId: args.docId,
-        content: `Contents for ${args.docId ?? "unknown-doc"}`
-      },
-      error: null
-    };
-  }
+function failureResult(
+  error: ToolError,
+  attempts: number,
+  recovered: boolean,
+  previousErrors: DispatchToolResult["retry"]["errors"]
+): DispatchToolResult {
+  const errors = [...previousErrors, error];
 
-  if (tool === "summarise_text") {
-    return {
-      ok: true,
-      data: {
-        summary: `Summary for ${args.text ?? "provided text"}`
-      },
-      error: null
-    };
-  }
+  return {
+    ok: false,
+    data: null,
+    error,
+    retry: {
+      attempts,
+      recovered,
+      errors
+    }
+  };
+}
 
-  if (tool === "query_sql") {
-    return {
-      ok: true,
-      data: {
-        rows: [{ accountId: "acct-1", activityCount: 12 }],
-        sql: args.sql
-      },
-      error: null
-    };
-  }
+function unknownToolError(tool: string): ToolError {
+  return {
+    code: "UNKNOWN_TOOL",
+    message: `No tool handler is configured for ${tool}.`,
+    recoverable: false
+  };
+}
 
-  if (tool === "lookup_contact") {
-    if (args.contactId === "transient-contact" && attempt === 1) {
+const DEFAULT_TOOL_HANDLERS: ToolHandlerRegistry = {
+  search_docs: (args) => ({
+    ok: true,
+    data: { docIds: ["report-doc-1"], query: args.query ?? null },
+    error: null
+  }),
+  fetch_doc: (args) => ({
+    ok: true,
+    data: {
+      docId: args.docId ?? null,
+      content: `Contents for ${args.docId ?? "unknown-doc"}`
+    },
+    error: null
+  }),
+  summarise_text: (args) => ({
+    ok: true,
+    data: {
+      summary: `Summary for ${args.text ?? "provided text"}`
+    },
+    error: null
+  }),
+  query_sql: (args) => ({
+    ok: true,
+    data: {
+      rows: [{ accountId: "acct-1", activityCount: 12 }],
+      sql: args.sql ?? null
+    },
+    error: null
+  }),
+  lookup_contact: (args, context) => {
+    if (args.contactId === "transient-contact" && context.attempt === 1) {
       return {
         ok: false,
         data: null,
@@ -128,20 +188,19 @@ function invokeTool(
     return {
       ok: true,
       data: {
-        contactId: args.contactId,
+        contactId: args.contactId ?? null,
         email: "casey@example.com"
       },
       error: null
     };
-  }
-
-  return {
-    ok: false,
-    data: null,
-    error: {
-      code: "UNKNOWN_TOOL",
-      message: `No mock runtime is configured for ${tool}.`,
-      recoverable: false
-    }
-  };
-}
+  },
+  send_email: (args) => ({
+    ok: true,
+    data: {
+      accepted: true,
+      contactId: args.contactId ?? null,
+      idempotencyKey: args.idempotency_key ?? null
+    },
+    error: null
+  })
+};

@@ -1,0 +1,71 @@
+name: Copilot review to issue
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    if: >
+      contains(github.event.comment.user.login, 'copilot')
+      || contains(github.event.comment.body, 'Copilot')
+    steps:
+      - name: Create issue from Copilot review finding
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment;
+            const issue = context.payload.issue;
+            const pullRequest = context.payload.pull_request;
+
+            const prNumber = issue?.number ?? pullRequest?.number ?? "unknown";
+            const prUrl = issue?.html_url ?? pullRequest?.html_url ?? "";
+            const commentUrl = comment.html_url;
+            const body = comment.body ?? "";
+
+            const firstLine = body
+              .split("\n")
+              .map((line) => line.trim())
+              .find((line) => line.length > 0) ?? "Copilot review finding";
+
+            const title = `Copilot finding from PR #${prNumber}: ${firstLine.slice(0, 80)}`;
+
+            const issueBody = [
+              `## Source`,
+              ``,
+              `Copilot review finding on PR #${prNumber}`,
+              ``,
+              `PR: ${prUrl}`,
+              `Comment: ${commentUrl}`,
+              ``,
+              `## Finding`,
+              ``,
+              body,
+              ``,
+              `## Acceptance Criteria`,
+              ``,
+              `- Add or update a regression test that reproduces the issue where practical`,
+              `- Fix the underlying implementation`,
+              `- Run lint, typecheck and tests`,
+              `- Open a PR that links back to this issue`
+            ].join("\n");
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: issueBody,
+              labels: [
+                "copilot-review",
+                "must-fix-before-next-feature",
+                "auto-generated"
+              ]
+            });

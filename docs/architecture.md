@@ -2,61 +2,118 @@
 
 ## Purpose
 
-This repository implements a small, deterministic agent runtime for the AgentKit take-home. The goal is to show production-shaped judgement in a local slice: deterministic mock LLM planning, tool retrieval, structured tool execution, bounded retries, runtime guards, per-step persistence, useful tests, and honest documentation.
+ExpandIQ AgentKit is a deterministic local slice of a tool-calling agent runtime. It is designed to show the core production-shaped behaviours the assignment asks for: explicit contracts, tool retrieval, mock LLM planning, validated tool execution, bounded retries, guard-based termination, durable step replay, a thin API, a minimal frontend, and focused tests.
 
-It is not intended to be a production service. The implementation favours replayability, explicit terminal states, and clear failure handling over breadth.
+It is not a production service. The project favours repeatability and reviewer clarity over infrastructure breadth.
 
-## Runtime boundaries
+## Runtime Boundaries
 
-- `packages/runtime-contracts` owns shared contracts for tool metadata, tool results, terminal reasons, and deterministic lexical retrieval.
-- `apps/api` owns the mock LLM, runner loop, SQLite persistence, and tool executor.
-- `apps/web` is currently only a minimal metadata package, not a full user-facing frontend.
-- `prompts` stores AI-assist notes and workflow prompt material.
+- `packages/runtime-contracts`: shared TypeScript contracts for terminal reasons, tool metadata, tool results, tool errors, and deterministic top-K retrieval.
+- `apps/api`: Fastify route factory, mock LLM planner, agent loop, mock tool executor, SQLite persistence, and backend tests.
+- `apps/web`: Vite React frontend that creates runs, lists recent runs, loads run details, and renders user-friendly terminal states.
+- `docs` and `prompts`: architecture notes, ADRs, walkthrough material, review status, and AI-assist records.
 
-The API boundary is currently a TypeScript package boundary rather than a real Fastify HTTP server. If a Fastify route layer is added later, it should stay thin: validate requests, create/read runs, and delegate agent execution to the existing runner.
+## Request Flow
 
-## Golden path
+1. The frontend posts a goal to `POST /runs`.
+2. The API validates the trimmed goal and bounded optional controls: `max_steps` and `max_cost_usd`.
+3. The API creates a run ID and calls `executeMockAgentRun`.
+4. The runner creates a SQLite run record.
+5. Before each planner call, the runner retrieves a deterministic top-K candidate tool set from the registry.
+6. The mock LLM returns either a `tool_call` or `final` response with a fixed mock cost.
+7. Tool calls are dispatched through the executor, which validates metadata, idempotency requirements, handler availability, and retry policy.
+8. Each executed tool call is persisted as an ordered step.
+9. Final responses are persisted as a final step and the run is marked `succeeded`.
+10. Guard or error exits mark the run with an explicit terminal reason.
+11. The frontend reads runs with `GET /runs` and details with `GET /runs/:id`.
 
-1. A caller creates a run with a goal.
-2. The runner persists the run in SQLite.
-3. Before each planner call, the registry is narrowed with deterministic lexical retrieval.
-4. The mock LLM receives only the goal, ordered past steps, and candidate tools.
-5. Tool calls go through the executor, which validates the tool, runs the handler, converts failures to structured tool results, and applies bounded retry rules.
-6. Each executed tool call is persisted as an ordered step.
-7. A final planner response is persisted and the run is marked `succeeded` with a final answer.
+## Retrieval
 
-## Failure paths
+`retrieveTools(goal, registry, topK)` uses deterministic lexical scoring:
 
-- Planner errors are caught, persisted as an `error` step, and terminate the run with `reason = "error"`.
-- Unknown tools, missing handlers, idempotency validation failures, handler exceptions, and semantic tool failures are returned as structured tool results.
-- Recoverable tool errors are retried with a small bounded policy. Semantic tool errors are recorded and surfaced to the agent loop. Runtime guard failures terminate the run with an explicit reason. This prevents tool failures from being swallowed or misclassified as successful steps.
-- Guard failures terminate with one of `step_cap`, `cost_cap`, `stuck`, or `timeout`.
-- Cost-cap checks happen after planner cost is added and before dispatching a tool that would exceed the cap.
+- normalize and tokenize the goal;
+- score exact name, name-token, keyword, description, and phrase overlap;
+- sort by score descending, then tool name, then original registry order;
+- return at most `topK` tool metadata entries.
 
-## Design invariants
+This keeps planner inputs stable and explainable without embeddings, vector stores, network calls, or LLM-based routing.
 
-- Every run must finish with exactly one terminal reason.
-- Every executed tool call must produce a persisted step.
-- No raw exception should escape as an unstructured tool result.
-- The same goal should produce the same sequence of mock LLM decisions.
-- Guards should fail closed, not silently continue.
+## Mock LLM
 
-## Production patterns considered, intentionally scoped down
+The mock planner selects scenarios from goal keywords:
 
-This implementation borrows production-system thinking without implementing production infrastructure. The local runtime includes request validation, deterministic replay, step-level persistence, budget guards, bounded retries and explicit terminal states. I deliberately did not add queues, distributed workers, caching, streaming, auth or deployment infrastructure because the exercise rewards a small complete slice over speculative architecture.
+- `report`, `summary`, or `docs`: search docs, fetch a doc, summarize it, then return a final answer.
+- `stuck` or `loop`: repeat the same `fetch_doc` call until stuck detection terminates.
+- `expensive`, `budget`, or `cost cap`: emit costly SQL calls so the budget guard can terminate.
+- `retry` or `transient`: trigger a recoverable contact lookup and then finish.
+- anything else: fetch a default document and finish.
 
-- API Gateway: maps to the intended Fastify API boundary: a single entry point with request validation and no auth for this exercise. In the current codebase this boundary is not yet an HTTP server; it is represented by the API package exports and should be kept thin if Fastify routes are added.
-- Rate limiting: maps to local budget guards such as step cap, cost cap, stuck detection, and timeout, not tenant-level rate limiting.
-- Caching: useful future work for tool retrieval results or deterministic tool outputs, but intentionally not built.
-- Message queues: useful future work if runs become long-running or need background processing, but this implementation stays synchronous and deterministic.
-- Circuit breakers: maps to the tool runtime's bounded retries, recoverable vs semantic error distinction, and explicit structured failures. Recoverable errors can retry; semantic errors and guard failures surface directly.
-- Load balancing/autoscaling: out of scope because this is a single-node deterministic exercise.
+The planner rejects tool calls that are not present in the retrieved candidate set. That makes retrieval quality visible during tests instead of silently bypassing the retriever.
 
-## Known trade-offs
+## Tool Execution
 
-- Lexical retrieval is deterministic and explainable, but it cannot infer intent beyond registry vocabulary and keywords.
-- The mock LLM is predictable and testable, but scenario selection is keyword-based and intentionally narrow.
-- SQLite persistence gives durable step replay locally, but there is no migration framework or concurrent worker model.
-- The runner is synchronous, which keeps behaviour easy to test but is not suitable for long-running production jobs.
-- The frontend is minimal and does not yet demonstrate the runtime through a browser workflow.
-- The HTTP/Fastify boundary described in the assignment is not currently implemented; adding it should be a focused follow-up rather than folded into broader infrastructure work.
+All tool calls pass through one executor boundary. The executor:
+
+- validates that the tool exists in metadata;
+- rejects missing handlers;
+- enforces idempotency keys for non-idempotent tools;
+- converts handler successes and failures into the shared `ToolResult` contract;
+- catches raw exceptions as structured non-recoverable errors;
+- retries recoverable errors up to `maxRetries`;
+- records retry metadata in the persisted step result.
+
+Semantic failures such as unknown tools and validation errors are not retried.
+
+## Persistence
+
+SQLite stores:
+
+- `runs`: goal, status, terminal reason, total cost, final answer, start time, and finish time.
+- `steps`: ordered step number, kind, arguments, result JSON, start time, and finish time.
+
+`listRuns` returns newest runs first. `readRun` returns a run with ordered steps for deterministic replay.
+
+The implementation uses Node's built-in `node:sqlite` module. That keeps the dependency surface small for the take-home, but it is a known trade-off because the module may emit an experimental warning depending on the Node version.
+
+## Guards
+
+Runs always finish with one terminal reason:
+
+- `succeeded`: final answer accepted and persisted.
+- `step_cap`: loop exhausted the configured step count.
+- `cost_cap`: planner cost pushed the run to or above the configured budget before more work continued.
+- `stuck`: the same tool and canonicalized args repeated enough times.
+- `timeout`: the runtime exceeded the configured elapsed time before the next planner call.
+- `error`: planner failure or non-recoverable tool result.
+
+Guard ordering is deterministic: timeout before planner call, cost accumulation after planner response, cost cap before dispatch or final persistence, tool execution and persistence, then stuck detection.
+
+## Frontend
+
+The frontend provides the required minimal workflow:
+
+- enter a goal;
+- start a run;
+- display a user-friendly outcome;
+- show a prominent final answer when available;
+- list previous runs;
+- inspect ordered step details.
+
+The backend currently executes synchronously, so the frontend normally loads the completed run immediately. Polling remains in place for any future backend that reports `running` after creation.
+
+## Production Patterns Considered, Intentionally Scoped Down
+
+- API gateway: represented by a thin Fastify boundary with request validation. Auth, tenancy, and gateway policy are out of scope.
+- Budget guards: implemented locally with max steps, max cost, timeout, stuck detection, and retry limits.
+- Circuit breakers: approximated by recoverable vs semantic tool errors, bounded retries, and structured failures.
+- Queueing: useful for long-running jobs, but omitted to preserve deterministic synchronous review.
+- Caching: possible future work for retrieval or deterministic tool outputs, but not needed for the small registry.
+- Scaling: not addressed; this is a single-node local exercise.
+
+## Key Trade-Offs
+
+- Deterministic mock planning is easy to test but intentionally narrow.
+- Lexical retrieval is transparent but vocabulary-sensitive.
+- SQLite is simple to run locally but lacks production migration and concurrency patterns here.
+- Synchronous execution keeps the code understandable but is not suitable for long-running production agents.
+- The UI is concise and functional rather than a complete product shell.

@@ -47,5 +47,13 @@ export const TOOLS = [
     keywords: ["lookup", "contact", "person", "directory"],
     idempotent: true,
     parallelSafe: true
+  },
+  {
+    id: "send_email",
+    name: "Send Email",
+    description: "Send an email to a known contact using an idempotency key.",
+    keywords: ["send", "email", "contact", "message"],
+    idempotent: false,
+    parallelSafe: false
   }
 ] as const satisfies readonly ToolMetadata[];

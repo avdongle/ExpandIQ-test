@@ -19,6 +19,10 @@
 - Persistence errors are not wrapped into user-facing runtime errors; a SQLite write failure would surface as an exception.
 - There is no auth, tenancy, shared rate limiting, cancellation, resume endpoint, streaming, queue, deployment config, or migration system.
 
+## Copilot Review Triage
+
+- EXP-23 was reviewed as an auto-generated Copilot review issue. Its linked GitHub issue contains only Linear linkbacks and an owner note that it was erroneously generated, so there is no accepted code finding to fix.
+
 ## Manual Demo Paths
 
 - Report success: `Create a report from the docs`.

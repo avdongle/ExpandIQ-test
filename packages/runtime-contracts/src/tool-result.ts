@@ -1,7 +1,5 @@
 import type { ToolError } from "./tool-error.js";
 
-export interface ToolResult<T = unknown> {
-  ok: boolean;
-  data: T | null;
-  error: ToolError | null;
-}
+export type ToolResult<T = unknown> =
+  | { ok: true; data: T; error: null }
+  | { ok: false; data: null; error: ToolError };

@@ -4,30 +4,28 @@ import type { ToolError } from "./tool-error.js";
 import type { ToolResult } from "./tool-result.js";
 
 describe("tool result contracts", () => {
-  it("prevents invalid result shapes at typecheck time", () => {
-    const invalidResult = {
-      ok: true,
-      data: { documentId: "doc-1" }
-    };
-
-    // @ts-expect-error ToolResult must include the explicit error field.
-    const result: ToolResult<{ documentId: string }> = invalidResult;
-
-    expect(result.data?.documentId).toBe("doc-1");
-  });
-
   it("supports successful results", () => {
-    const result: ToolResult<{ documentId: string }> = {
+    const result: ToolResult<{ value: number }> = {
       ok: true,
-      data: { documentId: "doc-1" },
+      data: { value: 1 },
       error: null
     };
 
     expect(result).toEqual({
       ok: true,
-      data: { documentId: "doc-1" },
+      data: { value: 1 },
       error: null
     });
+  });
+
+  it("supports successful results without payloads", () => {
+    const result: ToolResult<null> = {
+      ok: true,
+      data: null,
+      error: null
+    };
+
+    expect(result.data).toBeNull();
   });
 
   it("supports recoverable tool errors", () => {
@@ -58,5 +56,32 @@ describe("tool result contracts", () => {
     };
 
     expect(result.error?.recoverable).toBe(false);
+  });
+
+  it("prevents invalid result states at typecheck time", () => {
+    // @ts-expect-error success results cannot include an error.
+    const invalidSuccess: ToolResult = {
+      ok: true,
+      data: {},
+      error: {
+        code: "X",
+        message: "Invalid",
+        recoverable: false
+      }
+    };
+
+    // @ts-expect-error failure results cannot include data.
+    const invalidFailure: ToolResult = {
+      ok: false,
+      data: {},
+      error: {
+        code: "X",
+        message: "Invalid",
+        recoverable: false
+      }
+    };
+
+    expect(invalidSuccess.ok).toBe(true);
+    expect(invalidFailure.ok).toBe(false);
   });
 });

@@ -29,12 +29,32 @@ Before coding, report:
 - branch name to use
 - scope boundaries
 
-Then:
+Git safety:
 - create or switch to a new branch using the Linear branch name if available, otherwise use identifier-title
+- immediately run `git branch --show-current`
+- if the current branch is still `main`, stop and report the branch creation failure
+- do not edit files on `main`
+
+Then:
 - implement only that ticket
 - write or update tests first where practical
 - run lint, typecheck and tests
-- provide final summary with files changed, commands run, known gaps and PR readiness
+- prepare a PR title and PR body
+
+PR requirements:
+- PR title must include the assignment number and Linear issue key, for example: `A8 EXP-13: Add API routes`
+- PR body must include a Linear closing keyword: `Closes EXP-XX`
+- before reporting PR readiness, confirm the PR title includes the ticket identifier
+- before reporting PR readiness, confirm the PR body includes `Closes EXP-XX`
+
+Final summary must include:
+- selected ticket
+- files changed
+- commands run
+- known gaps
+- PR title
+- PR body
+- whether the issue is ready for human review
 
 Do not start another ticket.
 Do not implement stretch goals.

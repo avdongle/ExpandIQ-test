@@ -41,6 +41,34 @@ describe("runs API routes", () => {
     });
   });
 
+  it("returns an internal error if a created run cannot be read back", async () => {
+    const { persistence, server } = createTestServer(["run-read-back"]);
+    const originalMarkRunFinished = persistence.markRunFinished.bind(persistence);
+    const originalReadRun = persistence.readRun.bind(persistence);
+    let finished = false;
+
+    persistence.markRunFinished = (runId, input) => {
+      const run = originalMarkRunFinished(runId, input);
+      finished = true;
+      return run;
+    };
+    persistence.readRun = (runId) => (finished ? null : originalReadRun(runId));
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/runs",
+      payload: {
+        goal: "Create a report from the docs"
+      }
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toMatchObject({
+      error: "Internal Server Error",
+      message: "Created run run-read-back could not be read back from persistence"
+    });
+  });
+
   it("rejects missing, empty, and whitespace-only goals", async () => {
     const { server } = createTestServer(["run-validation"]);
 

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import Fastify, { type FastifyInstance } from "fastify";
 
 import { executeMockAgentRun, type AgentClock } from "./agent-runner.js";
@@ -70,9 +72,13 @@ export function createServer({
     });
 
     const run = persistence.readRun(runId);
+    if (run === null) {
+      throw new Error(`Created run ${runId} could not be read back from persistence`);
+    }
+
     return reply.code(201).send({
       run_id: runId,
-      run: run === null ? null : toRunDto(run)
+      run: toRunDto(run)
     });
   });
 
@@ -187,7 +193,7 @@ function parseOptionalInteger(value: unknown, defaultValue: number): number | nu
 }
 
 function createDefaultRunId(): string {
-  return `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `run-${randomUUID()}`;
 }
 
 function errorResponse(code: ErrorCode, message: string): { error: { code: ErrorCode; message: string } } {

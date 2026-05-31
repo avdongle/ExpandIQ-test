@@ -5,7 +5,7 @@ export const TOOLS = [
     id: "search_docs",
     name: "Search Docs",
     description: "Search indexed documents for relevant matching content.",
-    keywords: ["search", "docs", "documents", "knowledge"],
+    keywords: ["search", "docs", "documents", "knowledge", "report"],
     idempotent: true,
     parallelSafe: true
   },
@@ -13,7 +13,7 @@ export const TOOLS = [
     id: "fetch_doc",
     name: "Fetch Doc",
     description: "Fetch a single document by identifier.",
-    keywords: ["fetch", "doc", "document", "retrieve"],
+    keywords: ["fetch", "doc", "document", "retrieve", "report"],
     idempotent: true,
     parallelSafe: true
   },
@@ -45,7 +45,7 @@ export const TOOLS = [
     id: "summarise_text",
     name: "Summarise Text",
     description: "Summarise provided text into a shorter form.",
-    keywords: ["summarise", "summary", "text", "condense"],
+    keywords: ["summarise", "summary", "text", "condense", "report"],
     idempotent: true,
     parallelSafe: true
   },

@@ -3,7 +3,14 @@ import { DEFAULT_TOOL_RETRIEVAL_TOP_K, retrieveTools } from "./tool-retrieval.js
 
 export type MockLlmRequest = {
   goal: string;
+  past_steps: readonly MockLlmPastStep[];
   candidate_tools: readonly ToolMetadata[];
+};
+
+export type MockLlmPastStep = {
+  kind: string;
+  args: unknown;
+  result: unknown;
 };
 
 export type MockLlm<Response> = (request: MockLlmRequest) => Response | Promise<Response>;
@@ -11,6 +18,7 @@ export type MockLlm<Response> = (request: MockLlmRequest) => Response | Promise<
 export type RunAgentLoopStepInput<Response> = {
   goal: string;
   mockLlm: MockLlm<Response>;
+  pastSteps?: readonly MockLlmPastStep[];
   registry: readonly ToolMetadata[];
   topK?: number;
 };
@@ -18,6 +26,7 @@ export type RunAgentLoopStepInput<Response> = {
 export async function runAgentLoopStep<Response>({
   goal,
   mockLlm,
+  pastSteps = [],
   registry,
   topK = DEFAULT_TOOL_RETRIEVAL_TOP_K
 }: RunAgentLoopStepInput<Response>): Promise<Response> {
@@ -25,6 +34,7 @@ export async function runAgentLoopStep<Response>({
 
   return mockLlm({
     goal,
+    past_steps: pastSteps,
     candidate_tools
   });
 }

@@ -11,6 +11,13 @@ export function getApiStatus(): ApiStatus {
 }
 
 export { createSQLitePersistence } from "./sqlite-persistence.js";
+export { executeMockAgentRun } from "./agent-runner.js";
+export { mockLlm } from "./mock-llm.js";
+export type {
+  MockLlmFinalResponse,
+  MockLlmResponse,
+  MockLlmToolCallResponse
+} from "./mock-llm.js";
 export type {
   CreateRunInput,
   JSONValue,

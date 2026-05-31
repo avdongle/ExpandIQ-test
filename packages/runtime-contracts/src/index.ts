@@ -1,6 +1,7 @@
 export {
   runAgentLoopStep,
   type MockLlm,
+  type MockLlmPastStep,
   type MockLlmRequest,
   type RunAgentLoopStepInput
 } from "./agent-loop.js";

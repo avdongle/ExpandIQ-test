@@ -17,6 +17,7 @@ describe("agent loop step", () => {
     expect(mockLlm).toHaveBeenCalledOnce();
     expect(mockLlm).toHaveBeenCalledWith({
       goal: "What is the weather in Melbourne?",
+      past_steps: [],
       candidate_tools: expect.arrayContaining([
         expect.objectContaining({ id: "fetch_weather" })
       ])

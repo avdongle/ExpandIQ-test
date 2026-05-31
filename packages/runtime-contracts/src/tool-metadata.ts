@@ -2,7 +2,7 @@ export interface ToolMetadata {
   id: string;
   name: string;
   description: string;
-  keywords: string[];
+  keywords: readonly string[];
   idempotent: boolean;
   parallelSafe: boolean;
 }

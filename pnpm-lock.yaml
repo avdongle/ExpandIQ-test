@@ -28,6 +28,8 @@ importers:
 
   apps/web: {}
 
+  packages/runtime-contracts: {}
+
 packages:
 
   '@esbuild/aix-ppc64@0.27.7':

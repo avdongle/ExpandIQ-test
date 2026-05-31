@@ -88,6 +88,31 @@ describe("mock LLM scenarios", () => {
       cost: 0.08
     });
   });
+
+  it("emits a transient lookup call before the retry scenario final answer", () => {
+    const first = mockLlm({
+      goal: "Handle a transient retry case",
+      past_steps: [],
+      candidate_tools: TOOLS
+    });
+    const final = mockLlm({
+      goal: "Handle a transient retry case",
+      past_steps: [step(1, "lookup_contact", { contactId: "transient-contact" })],
+      candidate_tools: TOOLS
+    });
+
+    expect(first).toEqual({
+      type: "tool_call",
+      tool: "lookup_contact",
+      args: { contactId: "transient-contact" },
+      cost: 0.002
+    });
+    expect(final).toEqual({
+      type: "final",
+      content: "Retry flow complete: recovered from a transient lookup error.",
+      cost: 0.001
+    });
+  });
 });
 
 function step(

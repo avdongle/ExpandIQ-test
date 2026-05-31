@@ -11,6 +11,31 @@ pnpm test
 pnpm build
 ```
 
+## Running the app locally
+
+The frontend is a Vite React app in `apps/web`. It calls the backend through a Vite dev-server proxy so local browser requests can use `/runs` without requiring backend CORS changes.
+
+There is not yet a first-class API dev script. Build the workspace once, then start the Fastify server from the built API package:
+
+```sh
+pnpm build
+node --input-type=module -e "import { createServer } from './apps/api/dist/server.js'; const server = createServer(); await server.listen({ port: 3000, host: '127.0.0.1' }); console.log('API listening on http://127.0.0.1:3000'); process.on('SIGINT', async () => { await server.close(); process.exit(0); });"
+```
+
+In a second terminal, start Vite:
+
+```sh
+pnpm --filter @expandiq-agentkit/web dev
+```
+
+By default the proxy expects the API server at `http://localhost:3000`. Override that with `VITE_API_PROXY_TARGET` if the Fastify server is listening elsewhere:
+
+```sh
+VITE_API_PROXY_TARGET=http://localhost:4000 pnpm --filter @expandiq-agentkit/web dev
+```
+
+Known frontend gaps: runs execute synchronously on the current backend, so the UI loads the completed run details immediately after creation. Polling remains in place for any future backend state that reports a run as still running. Authentication, routing, streaming updates, cancel/retry actions, and advanced run filters are intentionally out of scope.
+
 ## Design and review docs
 
 - [Architecture](docs/architecture.md)

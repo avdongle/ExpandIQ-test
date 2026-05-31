@@ -16,6 +16,7 @@ export type RunRecord = {
   status: RunStatus;
   reason: string | null;
   totalCost: number;
+  finalAnswer: string | null;
   startedAt: string;
   finishedAt: string | null;
 };
@@ -56,6 +57,7 @@ export type MarkRunFinishedInput = {
   status?: RunStatus;
   reason: string;
   totalCost?: number;
+  finalAnswer?: string | null;
   finishedAt?: string;
 };
 
@@ -78,6 +80,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
       status TEXT NOT NULL CHECK (status IN ('running', 'finished')),
       reason TEXT,
       total_cost REAL NOT NULL DEFAULT 0,
+      final_answer TEXT,
       started_at TEXT NOT NULL,
       finished_at TEXT
     );
@@ -94,6 +97,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
       UNIQUE (run_id, step_number)
     );
   `);
+  ensureRunsFinalAnswerColumn(db);
 
   return {
     createRun(input) {
@@ -103,18 +107,20 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
         status: "running",
         reason: null,
         totalCost: 0,
+        finalAnswer: null,
         startedAt: input.startedAt ?? new Date().toISOString(),
         finishedAt: null
       };
 
       db.prepare(
-        "INSERT INTO runs (id, goal, status, reason, total_cost, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO runs (id, goal, status, reason, total_cost, final_answer, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       ).run(
         run.id,
         run.goal,
         run.status,
         run.reason,
         run.totalCost,
+        run.finalAnswer,
         run.startedAt,
         run.finishedAt
       );
@@ -158,12 +164,14 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
 
       const finishedAt = input.finishedAt ?? new Date().toISOString();
       const totalCost = input.totalCost ?? currentRun.totalCost;
+      const finalAnswer = input.finalAnswer ?? currentRun.finalAnswer;
       db.prepare(
-        "UPDATE runs SET status = ?, reason = ?, total_cost = ?, finished_at = ? WHERE id = ?"
+        "UPDATE runs SET status = ?, reason = ?, total_cost = ?, final_answer = ?, finished_at = ? WHERE id = ?"
       ).run(
         input.status ?? "finished",
         input.reason,
         totalCost,
+        finalAnswer,
         finishedAt,
         runId
       );
@@ -174,7 +182,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
     listRuns() {
       return db
         .prepare(
-          "SELECT id, goal, status, reason, total_cost, started_at, finished_at FROM runs ORDER BY started_at DESC, id DESC"
+          "SELECT id, goal, status, reason, total_cost, final_answer, started_at, finished_at FROM runs ORDER BY started_at DESC, id DESC"
         )
         .all()
         .map(toRunRecord);
@@ -205,11 +213,20 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
 function readRunRecord(db: DatabaseSync, runId: string): RunRecord | null {
   const row = db
     .prepare(
-      "SELECT id, goal, status, reason, total_cost, started_at, finished_at FROM runs WHERE id = ?"
+      "SELECT id, goal, status, reason, total_cost, final_answer, started_at, finished_at FROM runs WHERE id = ?"
     )
     .get(runId);
 
   return row === undefined ? null : toRunRecord(row);
+}
+
+function ensureRunsFinalAnswerColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(runs)").all();
+  const hasFinalAnswer = columns.some((row) => readString(row, "name") === "final_answer");
+
+  if (!hasFinalAnswer) {
+    db.exec("ALTER TABLE runs ADD COLUMN final_answer TEXT;");
+  }
 }
 
 function toRunRecord(row: SQLiteRow): RunRecord {
@@ -224,6 +241,7 @@ function toRunRecord(row: SQLiteRow): RunRecord {
     status,
     reason: readNullableString(row, "reason"),
     totalCost: readNumber(row, "total_cost"),
+    finalAnswer: readNullableString(row, "final_answer"),
     startedAt: readString(row, "started_at"),
     finishedAt: readNullableString(row, "finished_at")
   };

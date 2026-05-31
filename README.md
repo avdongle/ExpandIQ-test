@@ -34,3 +34,9 @@ Scenario selection is keyword-based:
 - `default`: any other goal; example: `Fetch the default document`.
 
 The report flow completes after three deterministic tool calls and a final response. The stuck flow repeats the same tool and args until the runner marks the run with `reason = "stuck"`. The cost-cap flow emits a high fixed cost so low budgets terminate with `reason = "cost_cap"`. The retry flow triggers one recoverable lookup error, retries within the runtime, then persists a successful logical step with retry metadata.
+
+## Runtime loop and guards
+
+`executeMockAgentRun` creates a SQLite run, then runs a synchronous deterministic loop against the mock LLM. Before every planner call it retrieves a narrowed top-K tool list from the registry and passes only `goal`, ordered `past_steps`, and `candidate_tools` into the mock LLM. Tool calls are dispatched through the mock tool runtime, persisted as ordered steps, and final answers are stored on the run plus a final step for replay.
+
+Guard ordering is fixed for repeatable tests: timeout is checked before each planner call, LLM response cost is added before any tool execution, tool-call cost caps stop before dispatch, final responses persist their answer before terminal state is written, repeated `tool_name` plus canonical args trips `stuck` on the third occurrence, and exhausting the configured step count records `step_cap`.

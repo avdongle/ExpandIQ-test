@@ -5,18 +5,35 @@ import { dispatchTool } from "./tool-runtime.js";
 
 type TerminalReason = "step_cap" | "cost_cap" | "stuck" | "timeout" | "error" | "succeeded";
 
+export type AgentClock = {
+  nowIso(): string;
+  nowMs(): number;
+};
+
+type MockLlm = (request: {
+  goal: string;
+  past_steps: readonly StepRecord[];
+  candidate_tools: readonly ToolMetadata[];
+}) => MockLlmResponse;
+
 export type ExecuteMockAgentRunInput = {
   persistence: SQLitePersistence;
   runId: string;
   goal: string;
+  clock?: AgentClock;
   maxCostUsd?: number;
   maxRetries?: number;
   maxSteps?: number;
+  mockLlm?: MockLlm;
   registry?: readonly ToolMetadata[];
   stuckCallThreshold?: number;
+  timeoutMs?: number;
+  topK?: number;
 };
 
 export async function executeMockAgentRun({
+  clock = systemClock,
+  mockLlm: planner = mockLlm,
   persistence,
   runId,
   goal,
@@ -24,22 +41,31 @@ export async function executeMockAgentRun({
   maxRetries = 1,
   maxSteps = 10,
   registry = TOOLS,
-  stuckCallThreshold = 3
+  stuckCallThreshold = 3,
+  timeoutMs = 60_000,
+  topK = 3
 }: ExecuteMockAgentRunInput): Promise<void> {
-  persistence.createRun({ id: runId, goal });
+  persistence.createRun({ id: runId, goal, startedAt: clock.nowIso() });
 
   let totalCost = 0;
+  const startedAtMs = clock.nowMs();
+  const callCounts = new Map<string, number>();
 
   for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
+    if (clock.nowMs() - startedAtMs >= timeoutMs) {
+      finishRun(persistence, runId, "timeout", totalCost, clock);
+      return;
+    }
+
     const currentRun = persistence.readRun(runId);
     const pastSteps = currentRun?.steps ?? [];
     let response: MockLlmResponse;
 
     try {
-      response = mockLlm({
+      response = planner({
         goal,
         past_steps: pastSteps,
-        candidate_tools: registry
+        candidate_tools: retrieveCandidateTools(goal, registry, topK)
       });
     } catch (error) {
       persistence.persistStep({
@@ -52,9 +78,10 @@ export async function executeMockAgentRun({
           code: "MOCK_LLM_ERROR",
           message: error instanceof Error ? error.message : "Mock LLM planner failed."
         },
-        finishedAt: new Date().toISOString()
+        startedAt: clock.nowIso(),
+        finishedAt: clock.nowIso()
       });
-      finishRun(persistence, runId, "error", totalCost);
+      finishRun(persistence, runId, "error", totalCost, clock);
       return;
     }
 
@@ -68,12 +95,22 @@ export async function executeMockAgentRun({
         kind: "final",
         args: { type: "final" },
         result: { content: response.content, cost: response.cost },
-        finishedAt: new Date().toISOString()
+        startedAt: clock.nowIso(),
+        finishedAt: clock.nowIso()
       });
-      const terminalReason = totalCost > maxCostUsd ? "cost_cap" : "succeeded";
-      finishRun(persistence, runId, terminalReason, totalCost);
+      const terminalReason = totalCost >= maxCostUsd ? "cost_cap" : "succeeded";
+      finishRun(persistence, runId, terminalReason, totalCost, clock, response.content);
       return;
     }
+
+    if (totalCost >= maxCostUsd) {
+      finishRun(persistence, runId, "cost_cap", totalCost, clock);
+      return;
+    }
+
+    const signature = toolCallSignature(response.tool, response.args);
+    const nextCallCount = (callCounts.get(signature) ?? 0) + 1;
+    callCounts.set(signature, nextCallCount);
 
     const toolResult = dispatchTool({
       tool: response.tool,
@@ -92,66 +129,151 @@ export async function executeMockAgentRun({
         cost: response.cost
       },
       result: toolResult as unknown as JSONValue,
-      finishedAt: new Date().toISOString()
+      startedAt: clock.nowIso(),
+      finishedAt: clock.nowIso()
     });
 
     if (!toolResult.ok) {
-      finishRun(persistence, runId, "error", totalCost);
+      finishRun(persistence, runId, "error", totalCost, clock);
       return;
     }
 
-    if (totalCost > maxCostUsd) {
-      finishRun(persistence, runId, "cost_cap", totalCost);
-      return;
-    }
-
-    const updatedRun = persistence.readRun(runId);
-    if (updatedRun !== null && isStuck(updatedRun.steps, stuckCallThreshold)) {
-      finishRun(persistence, runId, "stuck", totalCost);
+    if (nextCallCount >= stuckCallThreshold) {
+      finishRun(persistence, runId, "stuck", totalCost, clock);
       return;
     }
   }
 
-  finishRun(persistence, runId, "step_cap", totalCost);
+  finishRun(persistence, runId, "step_cap", totalCost, clock);
 }
 
 function finishRun(
   persistence: SQLitePersistence,
   runId: string,
   reason: TerminalReason,
-  totalCost: number
+  totalCost: number,
+  clock: AgentClock,
+  finalAnswer?: string
 ): void {
   persistence.markRunFinished(runId, {
     reason,
     totalCost,
-    finishedAt: new Date().toISOString()
+    finalAnswer,
+    finishedAt: clock.nowIso()
   });
 }
 
-function isStuck(steps: readonly StepRecord[], stuckCallThreshold: number): boolean {
-  const toolSteps = steps.filter((step) => step.kind === "tool_call");
-  const recentSteps = toolSteps.slice(-stuckCallThreshold);
-
-  if (recentSteps.length < stuckCallThreshold) {
-    return false;
+function retrieveCandidateTools(
+  goal: string,
+  registry: readonly ToolMetadata[],
+  topK: number
+): readonly ToolMetadata[] {
+  const limit = Math.max(0, Math.floor(topK));
+  if (limit === 0) {
+    return [];
   }
 
-  const [firstStep] = recentSteps;
-  const firstSignature = toolCallSignature(firstStep);
+  const goalTokens = new Set(tokenize(goal));
+  const normalizedGoal = normalize(goal);
 
-  return recentSteps.every((step) => toolCallSignature(step) === firstSignature);
+  return registry
+    .map((tool, index) => ({
+      index,
+      score: scoreTool(tool, goalTokens, normalizedGoal),
+      tool
+    }))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      const nameComparison = left.tool.name.localeCompare(right.tool.name);
+      if (nameComparison !== 0) {
+        return nameComparison;
+      }
+
+      return left.index - right.index;
+    })
+    .slice(0, limit)
+    .map((result) => result.tool);
 }
 
-function toolCallSignature(step: StepRecord): string {
-  const args = step.args;
+function scoreTool(
+  tool: ToolMetadata,
+  goalTokens: ReadonlySet<string>,
+  normalizedGoal: string
+): number {
+  const normalizedName = normalize(tool.name);
+  let score = normalizedGoal === normalizedName ? 20 : 0;
 
-  if (typeof args !== "object" || args === null || Array.isArray(args)) {
-    return JSON.stringify(args);
+  score += scoreTokenOverlap(goalTokens, tokenize(tool.name), 8);
+  score += scoreTokenOverlap(goalTokens, tool.keywords.flatMap((keyword) => tokenize(keyword)), 6);
+  score += scoreTokenOverlap(goalTokens, tokenize(tool.description), 3);
+
+  if (normalizedName.length > 0 && ` ${normalizedGoal} `.includes(` ${normalizedName} `)) {
+    score += 2;
   }
 
-  return JSON.stringify(args);
+  return score;
+}
+
+function scoreTokenOverlap(
+  goalTokens: ReadonlySet<string>,
+  candidateTokens: readonly string[],
+  weight: number
+): number {
+  let score = 0;
+  const seenTokens = new Set<string>();
+
+  for (const token of candidateTokens) {
+    if (!seenTokens.has(token) && goalTokens.has(token)) {
+      score += weight;
+      seenTokens.add(token);
+    }
+  }
+
+  return score;
+}
+
+function tokenize(value: string): string[] {
+  return normalize(value)
+    .split(" ")
+    .filter((token) => token.length > 0 && !STOP_WORDS.has(token));
+}
+
+function normalize(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function toolCallSignature(tool: string, args: Record<string, string>): string {
+  return `${tool}:${canonicalJSONStringify(args)}`;
+}
+
+function canonicalJSONStringify(value: JSONValue): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJSONStringify(item)).join(",")}]`;
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJSONStringify(value[key] ?? null)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function roundCost(cost: number): number {
   return Number(cost.toFixed(6));
 }
+
+const STOP_WORDS = new Set(["a", "an", "and", "for", "from", "in", "is", "it", "of", "the", "to", "what"]);
+
+const systemClock: AgentClock = {
+  nowIso: () => new Date().toISOString(),
+  nowMs: () => performance.now()
+};

@@ -9,3 +9,16 @@ export function getApiStatus(): ApiStatus {
     status: "ready"
   };
 }
+
+export { createSQLitePersistence } from "./sqlite-persistence.js";
+export type {
+  CreateRunInput,
+  JSONValue,
+  MarkRunFinishedInput,
+  PersistStepInput,
+  RunRecord,
+  RunStatus,
+  RunWithSteps,
+  SQLitePersistence,
+  StepRecord
+} from "./sqlite-persistence.js";

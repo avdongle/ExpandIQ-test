@@ -10,13 +10,14 @@ import type { CreateRunResponse, RunDetail, RunsResponse, RunStep, RunSummary } 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("App", () => {
-  it("creates a run and shows the final answer prominently", async () => {
+  it("creates a synchronous run and loads the completed timeline without manual refresh", async () => {
     const fetchMock = mockFetch([
       jsonResponse<RunsResponse>({ runs: [], pagination: pagination(0) }),
-      jsonResponse<CreateRunResponse>({ run_id: "run-1", run: runningRun }),
+      jsonResponse<CreateRunResponse>({ run_id: "run-1", run: finishedRun }),
       jsonResponse<RunsResponse>({ runs: [finishedRun], pagination: pagination(1) }),
       jsonResponse<RunDetail>({
         run: finishedRun,
@@ -33,6 +34,9 @@ describe("App", () => {
     expect(await screen.findByText("Report complete.")).toBeTruthy();
     expect(screen.getByLabelText("Final answer")).toBeTruthy();
     expect(screen.getByText("Searched the docs for relevant material.")).toBeTruthy();
+    expect(screen.getByText("Prepared the final answer.")).toBeTruthy();
+    expect(screen.queryByText("The run is working through its plan.")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith("/runs/run-1", undefined);
     expect(fetchMock).toHaveBeenCalledWith(
       "/runs",
       expect.objectContaining({
@@ -44,6 +48,27 @@ describe("App", () => {
         })
       })
     );
+  });
+
+  it("loads a created run even when create only returns a run id", async () => {
+    mockFetch([
+      jsonResponse<RunsResponse>({ runs: [], pagination: pagination(0) }),
+      jsonResponse<Partial<CreateRunResponse>>({ run_id: "run-1" }),
+      jsonResponse<RunsResponse>({ runs: [finishedRun], pagination: pagination(1) }),
+      jsonResponse<RunDetail>({
+        run: finishedRun,
+        steps: [toolStep, finalStep]
+      })
+    ]);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
+    await user.click(screen.getByRole("button", { name: "Start run" }));
+
+    expect(await screen.findByText("Report complete.")).toBeTruthy();
+    expect(screen.getByText("Searched the docs for relevant material.")).toBeTruthy();
   });
 
   it("lists past runs and loads a selected run", async () => {
@@ -61,7 +86,8 @@ describe("App", () => {
     expect(screen.getAllByText("Succeeded").length).toBeGreaterThan(0);
   });
 
-  it("shows an error state without leaving an indefinite spinner", async () => {
+  it("maps HTTP failures to friendly user-facing messages", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     mockFetch([
       jsonResponse<RunsResponse>({ runs: [], pagination: pagination(0) }),
       jsonResponse({ error: { code: "VALIDATION_ERROR", message: "backend unavailable" } }, 500)
@@ -73,10 +99,32 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("backend unavailable");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("The API could not complete that request.");
+    expect(alert.textContent).not.toContain("backend unavailable");
+    expect(alert.textContent).not.toContain("Request failed with status");
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Starting" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Creating run" })).toBeNull();
     });
+  });
+
+  it("maps network and proxy failures to friendly user-facing messages", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse<RunsResponse>({ runs: [], pagination: pagination(0) }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
+    await user.click(screen.getByRole("button", { name: "Start run" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("The API is not reachable.");
+    expect(alert.textContent).not.toContain("Failed to fetch");
   });
 
   it("keeps form controls accessible", async () => {

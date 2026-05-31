@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
 
-import { createRun, getRun, listRuns } from "./api.js";
+import { ApiClientError, createRun, getRun, listRuns } from "./api.js";
 import {
   formatJsonDetails,
   formatRelativeTime,
@@ -32,7 +32,7 @@ export function App(): ReactElement {
       setListState("idle");
     } catch (error) {
       setListState("error");
-      setErrorMessage(readErrorMessage(error));
+      setErrorMessage(readUserFacingError(error));
     }
   }, []);
 
@@ -46,7 +46,7 @@ export function App(): ReactElement {
       return detail;
     } catch (error) {
       setDetailState("error");
-      setErrorMessage(readErrorMessage(error));
+      setErrorMessage(readUserFacingError(error));
       return null;
     }
   }, []);
@@ -95,11 +95,14 @@ export function App(): ReactElement {
     setCreating(true);
     try {
       const response = await createRun(trimmedGoal);
+      if (response.run !== undefined) {
+        setSelectedRun({ run: response.run, steps: [] });
+      }
       setGoal("");
       await refreshRuns();
       await loadRun(response.run_id);
     } catch (error) {
-      setErrorMessage(readErrorMessage(error));
+      setErrorMessage(readUserFacingError(error));
     } finally {
       setCreating(false);
     }
@@ -131,7 +134,7 @@ export function App(): ReactElement {
               aria-describedby={goalError === null ? undefined : "goal-error"}
             />
             <button type="submit" disabled={creating}>
-              {creating ? "Starting" : "Start run"}
+              {creating ? "Creating run" : "Start run"}
             </button>
           </div>
           {goalError === null ? null : (
@@ -224,7 +227,9 @@ function RunDetailView({
       <div>
         <p className="run-title">{run.goal}</p>
         <p className="terminal-message">
-          {isFinished ? formatTerminalReason(run.reason) : "The run is working through its plan."}
+          {isFinished
+            ? formatTerminalReason(run.reason)
+            : "The API reports this run is still in progress."}
         </p>
       </div>
 
@@ -257,6 +262,12 @@ function RunDetailView({
   );
 }
 
-function readErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Something went wrong.";
+function readUserFacingError(error: unknown): string {
+  console.error(error);
+
+  if (error instanceof ApiClientError) {
+    return error.userMessage;
+  }
+
+  return "Something went wrong. Try again, and check the console for details if it keeps happening.";
 }

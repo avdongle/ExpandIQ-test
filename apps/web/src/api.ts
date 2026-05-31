@@ -3,6 +3,18 @@ import type { CreateRunResponse, RunDetail, RunsResponse } from "./types.js";
 const DEFAULT_MAX_STEPS = 20;
 const DEFAULT_MAX_COST_USD = 0.5;
 
+export class ApiClientError extends Error {
+  readonly userMessage: string;
+  readonly technicalMessage: string;
+
+  constructor(userMessage: string, technicalMessage: string) {
+    super(technicalMessage);
+    this.name = "ApiClientError";
+    this.userMessage = userMessage;
+    this.technicalMessage = technicalMessage;
+  }
+}
+
 export async function createRun(goal: string): Promise<CreateRunResponse> {
   return requestJson<CreateRunResponse>("/runs", {
     method: "POST",
@@ -26,12 +38,28 @@ export async function getRun(runId: string): Promise<RunDetail> {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    throw new ApiClientError(
+      "The API is not reachable. Start the backend and check the frontend proxy target, then try again.",
+      readTechnicalError(error)
+    );
+  }
+
   const body = (await response.json().catch(() => null)) as unknown;
 
   if (!response.ok) {
-    const message = readApiErrorMessage(body) ?? `Request failed with status ${response.status}`;
-    throw new Error(message);
+    const apiMessage = readApiErrorMessage(body);
+    const technicalMessage =
+      apiMessage === null
+        ? `Request failed with status ${response.status}`
+        : `Request failed with status ${response.status}: ${apiMessage}`;
+    throw new ApiClientError(
+      "The API could not complete that request. Check the backend logs or try again.",
+      technicalMessage
+    );
   }
 
   return body as T;
@@ -51,4 +79,8 @@ function readApiErrorMessage(body: unknown): string | null {
   }
 
   return null;
+}
+
+function readTechnicalError(error: unknown): string {
+  return error instanceof Error ? error.message : "Network request failed";
 }

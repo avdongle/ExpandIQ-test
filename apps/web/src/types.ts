@@ -56,5 +56,5 @@ export type RunsResponse = {
 
 export type CreateRunResponse = {
   run_id: string;
-  run: RunSummary;
+  run?: RunSummary;
 };

@@ -95,10 +95,14 @@ describe("mock agent runner", () => {
     expect(run).toMatchObject({
       status: "finished",
       reason: "cost_cap",
-      totalCost: 0.008
+      totalCost: 0.008,
+      finalAnswer: null
     });
-    expect(run?.steps).toHaveLength(4);
-    expect(run?.steps.at(-1)?.kind).toBe("final");
+    expect(run?.steps.map((step) => step.kind)).toEqual([
+      "tool_call",
+      "tool_call",
+      "tool_call"
+    ]);
 
     persistence.close();
   });

@@ -88,6 +88,11 @@ export async function executeMockAgentRun({
     totalCost = roundCost(totalCost + response.cost);
 
     if (response.type === "final") {
+      if (totalCost >= maxCostUsd) {
+        finishRun(persistence, runId, "cost_cap", totalCost, clock);
+        return;
+      }
+
       persistence.persistStep({
         id: `${runId}-step-${stepNumber}`,
         runId,
@@ -98,8 +103,7 @@ export async function executeMockAgentRun({
         startedAt: clock.nowIso(),
         finishedAt: clock.nowIso()
       });
-      const terminalReason = totalCost >= maxCostUsd ? "cost_cap" : "succeeded";
-      finishRun(persistence, runId, terminalReason, totalCost, clock, response.content);
+      finishRun(persistence, runId, "succeeded", totalCost, clock, response.content);
       return;
     }
 

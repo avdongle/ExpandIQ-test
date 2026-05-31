@@ -35,8 +35,7 @@ export function formatRunOutcome(run: RunSummary): string {
 
 export function formatStepActivity(step: RunStep): string {
   if (step.kind === "final") {
-    const content = readStringField(step.result, "content");
-    return content === null ? "Prepared the final answer." : "Prepared the final answer.";
+    return "Prepared the final answer.";
   }
 
   if (step.kind === "error") {

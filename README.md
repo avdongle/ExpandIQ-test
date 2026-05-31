@@ -64,7 +64,7 @@ Scenario selection is keyword-based:
 - `retry`: goals containing `retry` or `transient`; example: `Handle a transient retry case`.
 - `default`: any other goal; example: `Fetch the default document`.
 
-The report flow completes after three deterministic tool calls and a final response. The stuck flow repeats the same tool and args until the runner marks the run with `reason = "stuck"`. The cost-cap flow emits a high fixed cost so low budgets terminate with `reason = "cost_cap"`. The retry flow triggers one recoverable lookup error, retries within the runtime, then persists a successful logical step with retry metadata.
+The report flow completes after three deterministic tool calls and a final response. The stuck flow repeats the same tool and args until the runner marks the run with `reason = "stuck"`. The cost-cap flow emits high-cost `query_sql` calls with varied deterministic SQL offsets so the default frontend budget terminates with `reason = "cost_cap"` before stuck detection. The retry flow triggers one recoverable lookup error, retries within the runtime, then persists a successful logical step with retry metadata.
 
 ## Tool execution and retry policy
 

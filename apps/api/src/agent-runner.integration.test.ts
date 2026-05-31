@@ -74,9 +74,42 @@ describe("mock agent runner", () => {
     expect(run).toMatchObject({
       status: "finished",
       reason: "cost_cap",
-      totalCost: 0.08
+      totalCost: 0.18
     });
     expect(run?.steps).toHaveLength(0);
+
+    persistence.close();
+  });
+
+  it("terminates the expensive budget demo with cost cap under the default frontend budget", async () => {
+    const persistence = createSQLitePersistence(":memory:");
+
+    await executeMockAgentRun({
+      persistence,
+      runId: "run-default-budget-cost-cap",
+      goal: "Run an expensive budget test",
+      maxCostUsd: 0.5
+    });
+
+    const run = persistence.readRun("run-default-budget-cost-cap");
+    expect(run).toMatchObject({
+      status: "finished",
+      reason: "cost_cap",
+      totalCost: 0.54
+    });
+    expect(run?.reason).not.toBe("stuck");
+    expect(run?.steps.map((currentStep) => currentStep.args)).toEqual([
+      {
+        tool: "query_sql",
+        args: { sql: "select * from account_activity limit 25 offset 0" },
+        cost: 0.18
+      },
+      {
+        tool: "query_sql",
+        args: { sql: "select * from account_activity limit 25 offset 25" },
+        cost: 0.18
+      }
+    ]);
 
     persistence.close();
   });

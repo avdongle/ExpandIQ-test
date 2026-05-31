@@ -62,7 +62,7 @@ describe("mock agent runner guards", () => {
     expect(persistence.readRun("run-cost-cap")).toMatchObject({
       status: "finished",
       reason: "cost_cap",
-      totalCost: 0.08,
+      totalCost: 0.18,
       steps: []
     });
   });

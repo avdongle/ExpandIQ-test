@@ -52,3 +52,9 @@ Recoverable tool errors are retried synchronously up to the configured `maxRetri
 `executeMockAgentRun` creates a SQLite run, then runs a synchronous deterministic loop against the mock LLM. Before every planner call it retrieves a narrowed top-K tool list from the registry and passes only `goal`, ordered `past_steps`, and `candidate_tools` into the mock LLM. Tool calls are dispatched through the mock tool runtime, persisted as ordered steps, and final answers are stored on the run plus a final step for replay.
 
 Guard ordering is fixed for repeatable tests: timeout is checked before each planner call, LLM response cost is added before any tool execution, tool-call cost caps stop before dispatch, final responses persist their answer before terminal state is written, repeated `tool_name` plus canonical args trips `stuck` on the third occurrence, and exhausting the configured step count records `step_cap`.
+
+## API routes
+
+The API package exposes a Fastify server factory with `POST /runs`, `GET /runs`, and `GET /runs/:id`. `POST /runs` validates a trimmed `goal`, applies bounded defaults for `max_steps` and `max_cost_usd`, executes the deterministic runtime synchronously for this take-home, and returns the created run ID plus a frontend-friendly run summary. `GET /runs` returns recent runs newest first with `limit` and `offset` pagination metadata. `GET /runs/:id` returns the run summary and ordered persisted steps, or `RUN_NOT_FOUND` for unknown IDs.
+
+Tenant-level HTTP rate limiting is intentionally not implemented in this exercise. Abuse and cost risk are bounded locally through request validation, the `max_steps` and `max_cost_usd` caps, stuck detection, retry bounds, and the runtime timeout guard without introducing auth, tenancy, queues, or shared rate-limit infrastructure.

@@ -12,6 +12,8 @@ export function getApiStatus(): ApiStatus {
 
 export { createSQLitePersistence } from "./sqlite-persistence.js";
 export { executeMockAgentRun } from "./agent-runner.js";
+export { createServer } from "./server.js";
+export type { ApiServer, CreateServerOptions } from "./server.js";
 export { mockLlm } from "./mock-llm.js";
 export type {
   MockLlmFinalResponse,

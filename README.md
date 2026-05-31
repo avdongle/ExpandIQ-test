@@ -1,85 +1,122 @@
-# ExpandIQ-test
-Take-home coding challenge
+# ExpandIQ AgentKit
 
-## Local verification
+ExpandIQ AgentKit is a small TypeScript take-home project that demonstrates a deterministic tool-calling agent runtime. It includes shared runtime contracts, a Fastify API, SQLite persistence, a mock LLM planner, a bounded tool executor, and a minimal React frontend for creating and inspecting runs.
+
+The implementation is intentionally local and deterministic. It does not call real LLMs, external APIs, queues, auth providers, or deployment infrastructure.
+
+## Quick Start
+
+Prerequisites:
+
+- Node.js with `node:sqlite` support.
+- pnpm 10.12.1, matching the root `packageManager` field.
+
+Install dependencies:
 
 ```sh
 pnpm install
+```
+
+Verify the workspace:
+
+```sh
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
-## Running the app locally
+## Run Locally
 
-The frontend is a Vite React app in `apps/web`. It calls the backend through a Vite dev-server proxy so local browser requests can use `/runs` without requiring backend CORS changes.
+The frontend is a Vite React app in `apps/web`. It calls the backend through a Vite dev-server proxy, so browser requests use `/runs` while Vite forwards them to Fastify.
 
-There is not yet a first-class API dev script. Build the workspace once, then start the Fastify server from the built API package:
+Build the workspace once:
 
 ```sh
 pnpm build
+```
+
+Start the API from the built package:
+
+```sh
 node --input-type=module -e "import { createServer } from './apps/api/dist/server.js'; const server = createServer(); await server.listen({ port: 3000, host: '127.0.0.1' }); console.log('API listening on http://127.0.0.1:3000'); process.on('SIGINT', async () => { await server.close(); process.exit(0); });"
 ```
 
-In a second terminal, start Vite:
+In a second terminal, start the web app:
 
 ```sh
 pnpm --filter @expandiq-agentkit/web dev
 ```
 
-By default the proxy expects the API server at `http://localhost:3000`. Override that with `VITE_API_PROXY_TARGET` if the Fastify server is listening elsewhere:
+Vite serves the app at the URL printed by the command, usually `http://localhost:5173`.
+
+By default the proxy expects the API at `http://localhost:3000`. Override it when needed:
 
 ```sh
 VITE_API_PROXY_TARGET=http://localhost:4000 pnpm --filter @expandiq-agentkit/web dev
 ```
 
-Known frontend gaps: runs execute synchronously on the current backend, so the UI loads the completed run details immediately after creation. Polling remains in place for any future backend state that reports a run as still running. Authentication, routing, streaming updates, cancel/retry actions, and advanced run filters are intentionally out of scope.
+## Demo Goals
 
-## Design and review docs
+Use these goals to exercise the deterministic scenarios:
 
-- [Architecture](docs/architecture.md)
-- [Review pass](docs/review.md)
-- [AI-assist prompt log](prompts/pull-next-linear-ticket.md)
+- `Create a report from the docs`: successful multi-step run.
+- `This loop is stuck`: repeated tool call until the stuck guard fires.
+- `Run an expensive budget test`: cost-cap termination.
+- `Handle a transient retry case`: recoverable tool error followed by retry success.
+- `Fetch the default document`: default one-tool run and final answer.
 
-## SQLite persistence
+## Architecture Summary
 
-The API package uses Node's built-in `node:sqlite` module for the take-home SQLite persistence layer. Current Node versions emit an `ExperimentalWarning` for this module; that warning is expected and can be removed later by swapping to a stable SQLite package if needed.
+- `packages/runtime-contracts` defines terminal reasons, tool metadata, structured tool results, tool errors, and deterministic lexical retrieval.
+- `apps/api` owns Fastify routes, SQLite persistence, mock LLM planning, runtime orchestration, and tool execution.
+- `apps/web` owns the single-page React interface for starting runs, viewing results, and inspecting step details.
+- `prompts` and `docs/ai-assist-log.md` record the AI-assisted development workflow.
 
-## Tool retrieval
+The core loop creates a run, retrieves a top-K tool set before each planner call, asks the mock LLM for either a tool call or a final answer, executes tool calls through one validated executor boundary, persists ordered steps, and finishes with an explicit terminal reason.
 
-The runtime contracts include a deterministic lexical retriever for narrowing the full tool registry before a mock LLM call. `retrieveTools(goal, registry, topK)` lowercases and tokenizes the goal, scores overlap against tool names, descriptions, and keywords, then returns up to `topK` full tool metadata objects. The default limit is 5.
+See [docs/architecture.md](docs/architecture.md) for the full flow.
 
-Ties are resolved by higher score first, then tool name alphabetically, then original registry order if names are duplicated. This keeps results stable across repeated runs without embeddings, vector stores, LLM calls, or external services. The trade-off is that retrieval is explainable and predictable, but it only matches the registry vocabulary and simple keywords.
+## Design Decisions
 
-## Mock LLM scenarios
+- SQLite is used for local durable replay instead of Postgres to keep setup simple.
+- The mock LLM is deterministic and keyword-driven so tests can assert exact flows without network calls or model drift.
+- Tool retrieval is lexical and stable rather than embedding-based.
+- Runtime execution is synchronous for this exercise; polling exists in the frontend for future asynchronous backends.
+- Guards are local and explicit: step cap, cost cap, stuck detection, timeout, structured errors, and bounded retries.
 
-The API package includes a deterministic mock LLM planner for exercising the AgentKit loop without real model calls, SDKs, API keys, network requests, randomness, or hidden scenario state. The planner receives `goal`, `past_steps`, and `candidate_tools`, then returns either a `tool_call` or `final` response with fixed mock cost.
+ADRs:
 
-Scenario selection is keyword-based:
+- [ADR-001: SQLite over Postgres](docs/adr/ADR-001-sqlite-over-postgres.md)
+- [ADR-002: Deterministic Mock LLM](docs/adr/ADR-002-deterministic-mock-llm.md)
+- [ADR-003: Tool Retrieval Strategy](docs/adr/ADR-003-tool-retrieval-strategy.md)
+- [ADR-004: Synchronous Runtime](docs/adr/ADR-004-synchronous-runtime.md)
 
-- `report`: goals containing `report`, `summary`, or `docs`; example: `Create a report from the docs`.
-- `stuck`: goals containing `stuck` or `loop`; example: `This loop is stuck`.
-- `cost-cap`: goals containing `expensive`, `budget`, or `cost cap`; example: `Run an expensive budget test`.
-- `retry`: goals containing `retry` or `transient`; example: `Handle a transient retry case`.
-- `default`: any other goal; example: `Fetch the default document`.
+## API
 
-The report flow completes after three deterministic tool calls and a final response. The stuck flow repeats the same tool and args until the runner marks the run with `reason = "stuck"`. The cost-cap flow emits high-cost `query_sql` calls with varied deterministic SQL offsets so the default frontend budget terminates with `reason = "cost_cap"` before stuck detection. The retry flow triggers one recoverable lookup error, retries within the runtime, then persists a successful logical step with retry metadata.
+The Fastify server exposes:
 
-## Tool execution and retry policy
+- `POST /runs`: validate a goal, execute a deterministic run synchronously, and return the created run.
+- `GET /runs`: list recent runs with limit/offset pagination.
+- `GET /runs/:id`: return one run and its ordered persisted steps.
 
-Tool calls go through one executor boundary in the API package. The executor validates the requested tool before calling a handler, converts every success or failure into the same `ToolResult` shape, catches raw handler exceptions as non-recoverable `TOOL_EXCEPTION` errors, and records retry metadata with the persisted step result.
+The route layer is deliberately thin. Request validation and local budget caps cover take-home abuse risk without adding auth, tenancy, shared rate limiting, or background infrastructure.
 
-Recoverable tool errors are retried synchronously up to the configured `maxRetries` value, so total attempts are `maxRetries + 1`. Semantic errors such as unknown tools and validation failures are returned immediately without retry. `send_email` is marked non-idempotent in the mock registry and requires `args.idempotency_key`; the executor rejects the call before the handler runs when that key is missing.
+## Known Gaps
 
-## Runtime loop and guards
+- No real LLM integration, model provider SDK, external API calls, auth, Docker setup, deployment pipeline, queue, streaming updates, resume endpoint, or parallel tool execution.
+- API runs execute synchronously, so the frontend usually receives a completed run immediately after creation.
+- SQLite uses Node's built-in `node:sqlite` module, which currently emits an experimental warning on some Node versions.
+- There is no migration framework or multi-process concurrency model.
+- Retrieval is deterministic and explainable, but it cannot infer intent outside the tool registry vocabulary.
+- The UI is intentionally minimal and focuses on the required run workflow rather than a full product shell.
 
-`executeMockAgentRun` creates a SQLite run, then runs a synchronous deterministic loop against the mock LLM. Before every planner call it retrieves a narrowed top-K tool list from the registry and passes only `goal`, ordered `past_steps`, and `candidate_tools` into the mock LLM. Tool calls are dispatched through the mock tool runtime, persisted as ordered steps, and final answers are stored on the run plus a final step for replay.
+## AI Assistance
 
-Guard ordering is fixed for repeatable tests: timeout is checked before each planner call, LLM response cost is added before any tool execution, tool-call cost caps stop before dispatch, final responses persist their answer before terminal state is written, repeated `tool_name` plus canonical args trips `stuck` on the third occurrence, and exhausting the configured step count records `step_cap`.
+This repository was developed with AI coding assistance under human direction. The workflow used Linear ticket selection, scoped branches, test-first changes where practical, and human review of generated code before committing.
 
-## API routes
+Details are recorded in [docs/ai-assist-log.md](docs/ai-assist-log.md). The prompt used to pull the next ticket is in [prompts/pull-next-linear-ticket.md](prompts/pull-next-linear-ticket.md).
 
-The API package exposes a Fastify server factory with `POST /runs`, `GET /runs`, and `GET /runs/:id`. `POST /runs` validates a trimmed `goal`, applies bounded defaults for `max_steps` and `max_cost_usd`, executes the deterministic runtime synchronously for this take-home, and returns the created run ID plus a frontend-friendly run summary. `GET /runs` returns recent runs newest first with `limit` and `offset` pagination metadata. `GET /runs/:id` returns the run summary and ordered persisted steps, or `RUN_NOT_FOUND` for unknown IDs.
+## Handover
 
-Tenant-level HTTP rate limiting is intentionally not implemented in this exercise. Abuse and cost risk are bounded locally through request validation, the `max_steps` and `max_cost_usd` caps, stuck detection, retry bounds, and the runtime timeout guard without introducing auth, tenancy, queues, or shared rate-limit infrastructure.
+Use [docs/walkthrough.md](docs/walkthrough.md) for the reviewer walkthrough and live demo sequence. Use [docs/review.md](docs/review.md) for the current checklist status and remaining risks.

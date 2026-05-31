@@ -29,32 +29,40 @@ Before coding, report:
 - branch name to use
 - scope boundaries
 
-Git safety:
+Git and PR requirements:
 - create or switch to a new branch using the Linear branch name if available, otherwise use identifier-title
 - immediately run `git branch --show-current`
 - if the current branch is still `main`, stop and report the branch creation failure
 - do not edit files on `main`
+- after implementation and verification, commit the changes
+- push the branch to origin
+- create a GitHub PR using `gh pr create`
+- PR title must include the assignment number and Linear issue key, for example: `A8 EXP-13: Add API routes`
+- PR body must include a Linear closing keyword: `Closes EXP-XX`
+- before reporting PR readiness, confirm the PR URL was created
 
 Then:
 - implement only that ticket
 - write or update tests first where practical
 - run lint, typecheck and tests
-- prepare a PR title and PR body
+- commit the completed work
+- push the branch
+- create the PR
+- provide the concise final summary
 
-PR requirements:
-- PR title must include the assignment number and Linear issue key, for example: `A8 EXP-13: Add API routes`
-- PR body must include a Linear closing keyword: `Closes EXP-XX`
-- before reporting PR readiness, confirm the PR title includes the ticket identifier
-- before reporting PR readiness, confirm the PR body includes `Closes EXP-XX`
-
-Final summary must include:
-- selected ticket
-- files changed
-- commands run
-- known gaps
-- PR title
-- PR body
-- whether the issue is ready for human review
+Output control:
+- do not print full diffs
+- do not paste large file contents
+- do not include patch output unless a command failed and the patch is needed to explain the failure
+- at the end, provide only:
+  - selected ticket
+  - branch
+  - commit hash
+  - PR URL
+  - files changed
+  - commands run
+  - test results
+  - known gaps
 
 Do not start another ticket.
 Do not implement stretch goals.

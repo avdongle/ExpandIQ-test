@@ -1,3 +1,5 @@
+import { DEFAULT_TOOL_RETRIEVAL_TOP_K, retrieveTools } from "@expandiq-agentkit/runtime-contracts";
+
 import { mockLlm, type MockLlmResponse } from "./mock-llm.js";
 import { TOOLS, type ToolMetadata } from "./mock-tools.js";
 import type { JSONValue, SQLitePersistence, StepRecord } from "./sqlite-persistence.js";
@@ -43,7 +45,7 @@ export async function executeMockAgentRun({
   registry = TOOLS,
   stuckCallThreshold = 3,
   timeoutMs = 60_000,
-  topK = 3
+  topK = DEFAULT_TOOL_RETRIEVAL_TOP_K
 }: ExecuteMockAgentRunInput): Promise<void> {
   persistence.createRun({ id: runId, goal, startedAt: clock.nowIso() });
 
@@ -65,7 +67,7 @@ export async function executeMockAgentRun({
       response = planner({
         goal,
         past_steps: pastSteps,
-        candidate_tools: retrieveCandidateTools(goal, registry, topK)
+        candidate_tools: retrieveTools(goal, registry, topK)
       });
     } catch (error) {
       persistence.persistStep({
@@ -167,91 +169,6 @@ function finishRun(
   });
 }
 
-function retrieveCandidateTools(
-  goal: string,
-  registry: readonly ToolMetadata[],
-  topK: number
-): readonly ToolMetadata[] {
-  const limit = Math.max(0, Math.floor(topK));
-  if (limit === 0) {
-    return [];
-  }
-
-  const goalTokens = new Set(tokenize(goal));
-  const normalizedGoal = normalize(goal);
-
-  return registry
-    .map((tool, index) => ({
-      index,
-      score: scoreTool(tool, goalTokens, normalizedGoal),
-      tool
-    }))
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-
-      const nameComparison = left.tool.name.localeCompare(right.tool.name);
-      if (nameComparison !== 0) {
-        return nameComparison;
-      }
-
-      return left.index - right.index;
-    })
-    .slice(0, limit)
-    .map((result) => result.tool);
-}
-
-function scoreTool(
-  tool: ToolMetadata,
-  goalTokens: ReadonlySet<string>,
-  normalizedGoal: string
-): number {
-  const normalizedName = normalize(tool.name);
-  let score = normalizedGoal === normalizedName ? 20 : 0;
-
-  score += scoreTokenOverlap(goalTokens, tokenize(tool.name), 8);
-  score += scoreTokenOverlap(goalTokens, tool.keywords.flatMap((keyword) => tokenize(keyword)), 6);
-  score += scoreTokenOverlap(goalTokens, tokenize(tool.description), 3);
-
-  if (normalizedName.length > 0 && ` ${normalizedGoal} `.includes(` ${normalizedName} `)) {
-    score += 2;
-  }
-
-  return score;
-}
-
-function scoreTokenOverlap(
-  goalTokens: ReadonlySet<string>,
-  candidateTokens: readonly string[],
-  weight: number
-): number {
-  let score = 0;
-  const seenTokens = new Set<string>();
-
-  for (const token of candidateTokens) {
-    if (!seenTokens.has(token) && goalTokens.has(token)) {
-      score += weight;
-      seenTokens.add(token);
-    }
-  }
-
-  return score;
-}
-
-function tokenize(value: string): string[] {
-  return normalize(value)
-    .split(" ")
-    .filter((token) => token.length > 0 && !STOP_WORDS.has(token));
-}
-
-function normalize(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
 function toolCallSignature(tool: string, args: Record<string, string>): string {
   return `${tool}:${canonicalJSONStringify(args)}`;
 }
@@ -274,8 +191,6 @@ function canonicalJSONStringify(value: JSONValue): string {
 function roundCost(cost: number): number {
   return Number(cost.toFixed(6));
 }
-
-const STOP_WORDS = new Set(["a", "an", "and", "for", "from", "in", "is", "it", "of", "the", "to", "what"]);
 
 const systemClock: AgentClock = {
   nowIso: () => new Date().toISOString(),

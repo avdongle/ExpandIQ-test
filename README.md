@@ -11,6 +11,12 @@ pnpm test
 pnpm build
 ```
 
+## Design and review docs
+
+- [Architecture](docs/architecture.md)
+- [Review pass](docs/review.md)
+- [AI-assist prompt log](prompts/pull-next-linear-ticket.md)
+
 ## SQLite persistence
 
 The API package uses Node's built-in `node:sqlite` module for the take-home SQLite persistence layer. Current Node versions emit an `ExperimentalWarning` for this module; that warning is expected and can be removed later by swapping to a stable SQLite package if needed.

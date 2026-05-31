@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm --filter @expandiq-agentkit/runtime-contracts build && pnpm -r typecheck",
     "test": "vitest run",
     "build": "pnpm -r build"
   },

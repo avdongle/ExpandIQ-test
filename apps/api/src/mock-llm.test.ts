@@ -74,18 +74,29 @@ describe("mock LLM scenarios", () => {
     ]);
   });
 
-  it("emits high costs for the cost-cap flow", () => {
-    expect(
-      mockLlm({
-        goal: "Run an expensive budget test",
-        past_steps: [],
-        candidate_tools: TOOLS
-      })
-    ).toEqual({
+  it("emits varied high-cost calls for the cost-cap flow", () => {
+    const first = mockLlm({
+      goal: "Run an expensive budget test",
+      past_steps: [],
+      candidate_tools: TOOLS
+    });
+    const second = mockLlm({
+      goal: "Run an expensive budget test",
+      past_steps: [step(1, "query_sql", { sql: "select * from account_activity limit 25 offset 0" })],
+      candidate_tools: TOOLS
+    });
+
+    expect(first).toEqual({
       type: "tool_call",
       tool: "query_sql",
-      args: { sql: "select * from account_activity" },
-      cost: 0.08
+      args: { sql: "select * from account_activity limit 25 offset 0" },
+      cost: 0.18
+    });
+    expect(second).toEqual({
+      type: "tool_call",
+      tool: "query_sql",
+      args: { sql: "select * from account_activity limit 25 offset 25" },
+      cost: 0.18
     });
   });
 

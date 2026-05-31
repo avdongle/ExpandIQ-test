@@ -37,8 +37,8 @@ export function mockLlm(request: MockLlmRequest): MockLlmResponse {
     return toolCall(
       request.candidate_tools,
       "query_sql",
-      { sql: "select * from account_activity" },
-      0.08
+      { sql: `select * from account_activity limit 25 offset ${stepCount * 25}` },
+      0.18
     );
   }
 

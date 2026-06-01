@@ -6,8 +6,29 @@ import {
   type ToolHandler,
   type ToolHandlerRegistry
 } from "./tool-runtime.js";
+import { TOOLS } from "./mock-tools.js";
 
 describe("tool runtime executor", () => {
+  it("exposes the expected deterministic mock tool inventory", () => {
+    expect(TOOLS.map((tool) => tool.id)).toEqual([
+      "search_docs",
+      "fetch_doc",
+      "send_email",
+      "create_calendar_event",
+      "query_sql",
+      "summarise_text",
+      "translate",
+      "fetch_weather",
+      "lookup_contact",
+      "web_search"
+    ]);
+    expect(
+      TOOLS.every(
+        (tool) => typeof tool.idempotent === "boolean" && typeof tool.parallelSafe === "boolean"
+      )
+    ).toBe(true);
+  });
+
   it("returns a structured non-recoverable error for unknown tools", () => {
     const result = dispatchTool({
       tool: "missing_tool",

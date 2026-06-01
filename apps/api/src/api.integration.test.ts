@@ -66,6 +66,7 @@ describe("runs API integration", () => {
         {
           step_number: 1,
           kind: "tool_call",
+          cost: 0.002,
           result: {
             ok: true,
             retry: {
@@ -75,7 +76,7 @@ describe("runs API integration", () => {
             }
           }
         },
-        { step_number: 2, kind: "final" }
+        { step_number: 2, kind: "final", cost: 0.001 }
       ]
     });
 
@@ -96,11 +97,12 @@ describe("runs API integration", () => {
 
       const stepRows = db
         .prepare(
-          "SELECT step_number, kind, args_json, result_json FROM steps WHERE run_id = ? ORDER BY step_number ASC"
+          "SELECT step_number, kind, cost, args_json, result_json FROM steps WHERE run_id = ? ORDER BY step_number ASC"
         )
         .all("run-retry-api");
       expect(stepRows.map((row) => readNumber(row, "step_number"))).toEqual([1, 2]);
       expect(stepRows.map((row) => readString(row, "kind"))).toEqual(["tool_call", "final"]);
+      expect(stepRows.map((row) => readNumber(row, "cost"))).toEqual([0.002, 0.001]);
       expect(parseJSON(readString(stepRows[0], "result_json"))).toMatchObject({
         ok: true,
         retry: {
@@ -172,10 +174,11 @@ describe("runs API integration", () => {
 
       const stepRows = db
         .prepare(
-          "SELECT step_number, args_json FROM steps WHERE run_id = ? ORDER BY step_number ASC"
+          "SELECT step_number, cost, args_json FROM steps WHERE run_id = ? ORDER BY step_number ASC"
         )
         .all("run-stuck-api");
       expect(stepRows.map((row) => readNumber(row, "step_number"))).toEqual([1, 2, 3]);
+      expect(stepRows.map((row) => readNumber(row, "cost"))).toEqual([0.002, 0.002, 0.002]);
       expect(stepRows.map((row) => parseJSON(readString(row, "args_json")))).toEqual([
         { tool: "fetch_doc", args: { docId: "loop-doc" }, cost: 0.002 },
         { tool: "fetch_doc", args: { docId: "loop-doc" }, cost: 0.002 },

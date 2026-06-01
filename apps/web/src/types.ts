@@ -33,6 +33,7 @@ export type RunStep = {
   run_id: string;
   step_number: number;
   kind: string;
+  cost: number;
   args: JSONValue;
   result: JSONValue;
   started_at: string;

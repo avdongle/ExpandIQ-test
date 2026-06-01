@@ -20,6 +20,7 @@ describe("tool runtime executor", () => {
       "translate",
       "fetch_weather",
       "lookup_contact",
+      "wait",
       "web_search"
     ]);
     expect(
@@ -29,8 +30,8 @@ describe("tool runtime executor", () => {
     ).toBe(true);
   });
 
-  it("returns a structured non-recoverable error for unknown tools", () => {
-    const result = dispatchTool({
+  it("returns a structured non-recoverable error for unknown tools", async () => {
+    const result = await dispatchTool({
       tool: "missing_tool",
       args: {},
       maxRetries: 2,
@@ -59,10 +60,10 @@ describe("tool runtime executor", () => {
     });
   });
 
-  it("does not execute a handler when tool metadata is missing", () => {
+  it("does not execute a handler when tool metadata is missing", async () => {
     let calls = 0;
 
-    const result = dispatchTool({
+    const result = await dispatchTool({
       tool: "unregistered_tool",
       args: {},
       maxRetries: 2,
@@ -94,7 +95,7 @@ describe("tool runtime executor", () => {
     });
   });
 
-  it("retries recoverable errors and returns the eventual success", () => {
+  it("retries recoverable errors and returns the eventual success", async () => {
     let calls = 0;
     const handlers: ToolHandlerRegistry = {
       lookup_contact: () => {
@@ -120,7 +121,7 @@ describe("tool runtime executor", () => {
       }
     };
 
-    const result = dispatchTool({
+    const result = await dispatchTool({
       tool: "lookup_contact",
       args: { contactId: "contact-1" },
       maxRetries: 2,
@@ -144,7 +145,7 @@ describe("tool runtime executor", () => {
     });
   });
 
-  it("stops recoverable retries at the configured attempt limit", () => {
+  it("stops recoverable retries at the configured attempt limit", async () => {
     let calls = 0;
     const alwaysTransient: ToolHandler = () => {
       calls += 1;
@@ -160,7 +161,7 @@ describe("tool runtime executor", () => {
       };
     };
 
-    const result = dispatchTool({
+    const result = await dispatchTool({
       tool: "lookup_contact",
       args: { contactId: "contact-1" },
       maxRetries: 1,
@@ -185,10 +186,10 @@ describe("tool runtime executor", () => {
     });
   });
 
-  it("does not retry semantic non-recoverable tool errors", () => {
+  it("does not retry semantic non-recoverable tool errors", async () => {
     let calls = 0;
 
-    const result = dispatchTool({
+    const result = await dispatchTool({
       tool: "query_sql",
       args: { sql: "drop table accounts" },
       maxRetries: 2,
@@ -223,8 +224,8 @@ describe("tool runtime executor", () => {
     });
   });
 
-  it("converts raw handler exceptions into structured tool errors", () => {
-    const result = dispatchTool({
+  it("converts raw handler exceptions into structured tool errors", async () => {
+    const result = await dispatchTool({
       tool: "fetch_doc",
       args: { docId: "doc-1" },
       maxRetries: 2,
@@ -257,7 +258,7 @@ describe("tool runtime executor", () => {
     });
   });
 
-  it("requires an idempotency key before non-idempotent tools can execute", () => {
+  it("requires an idempotency key before non-idempotent tools can execute", async () => {
     let calls = 0;
     const registry: readonly ToolMetadata[] = [
       {
@@ -270,7 +271,7 @@ describe("tool runtime executor", () => {
       }
     ];
 
-    const missingKey = dispatchTool({
+    const missingKey = await dispatchTool({
       tool: "create_invoice",
       args: { customerId: "customer-1" },
       maxRetries: 2,
@@ -301,7 +302,7 @@ describe("tool runtime executor", () => {
       }
     });
 
-    const withKey = dispatchTool({
+    const withKey = await dispatchTool({
       tool: "create_invoice",
       args: { customerId: "customer-1", idempotency_key: "invoice-1" },
       maxRetries: 2,
@@ -323,6 +324,32 @@ describe("tool runtime executor", () => {
     expect(withKey).toMatchObject({
       ok: true,
       data: { accepted: true },
+      retry: {
+        attempts: 1,
+        recovered: false,
+        errors: []
+      }
+    });
+  });
+
+  it("runs the wait tool through the injected sleeper", async () => {
+    const sleeps: number[] = [];
+
+    const result = await dispatchTool({
+      tool: "wait",
+      args: { delayMs: "61000" },
+      maxRetries: 0,
+      sleep: async (durationMs) => {
+        sleeps.push(durationMs);
+      }
+    });
+
+    expect(sleeps).toEqual([61_000]);
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        waitedMs: 61_000
+      },
       retry: {
         attempts: 1,
         recovered: false,

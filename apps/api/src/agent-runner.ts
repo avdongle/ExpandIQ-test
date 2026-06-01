@@ -28,6 +28,7 @@ export type ExecuteMockAgentRunInput = {
   maxSteps?: number;
   mockLlm?: MockLlm;
   registry?: readonly ToolMetadata[];
+  sleep?: (durationMs: number) => Promise<void>;
   stuckCallThreshold?: number;
   timeoutMs?: number;
   topK?: number;
@@ -43,6 +44,7 @@ export async function executeMockAgentRun({
   maxRetries = 1,
   maxSteps = 20,
   registry = TOOLS,
+  sleep,
   stuckCallThreshold = 3,
   timeoutMs = 60_000,
   topK = DEFAULT_TOOL_RETRIEVAL_TOP_K
@@ -120,10 +122,11 @@ export async function executeMockAgentRun({
     const nextCallCount = (callCounts.get(signature) ?? 0) + 1;
     callCounts.set(signature, nextCallCount);
 
-    const toolResult = dispatchTool({
+    const toolResult = await dispatchTool({
       tool: response.tool,
       args: response.args,
-      maxRetries
+      maxRetries,
+      sleep
     });
 
     persistence.persistStep({

@@ -5,8 +5,8 @@ import { TOOLS } from "./mock-tools.js";
 
 export type ToolHandler = (
   args: Record<string, string>,
-  context: { attempt: number }
-) => ToolResult<JSONValue>;
+  context: { attempt: number; sleep: (durationMs: number) => Promise<void> }
+) => Promise<ToolResult<JSONValue>> | ToolResult<JSONValue>;
 
 export type ToolHandlerRegistry = Readonly<Partial<Record<string, ToolHandler>>>;
 
@@ -16,6 +16,7 @@ export type DispatchToolInput = {
   maxRetries: number;
   handlers?: ToolHandlerRegistry;
   registry?: readonly ToolMetadata[];
+  sleep?: (durationMs: number) => Promise<void>;
 };
 
 export type DispatchToolResult = ToolResult<JSONValue> & {
@@ -30,13 +31,14 @@ export type DispatchToolResult = ToolResult<JSONValue> & {
   };
 };
 
-export function dispatchTool({
+export async function dispatchTool({
   tool,
   args,
   maxRetries,
   handlers = DEFAULT_TOOL_HANDLERS,
-  registry = TOOLS
-}: DispatchToolInput): DispatchToolResult {
+  registry = TOOLS,
+  sleep = defaultSleep
+}: DispatchToolInput): Promise<DispatchToolResult> {
   const errors: DispatchToolResult["retry"]["errors"] = [];
   const maxAttempts = maxRetries + 1;
   const toolMetadata = registry.find((candidate) => candidate.id === tool);
@@ -65,7 +67,7 @@ export function dispatchTool({
   }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const result = invokeHandler(handler, args, attempt);
+    const result = await invokeHandler(handler, args, attempt, sleep);
 
     if (result.ok) {
       return {
@@ -95,13 +97,14 @@ export function dispatchTool({
   throw new Error("Tool dispatch exhausted attempts unexpectedly");
 }
 
-function invokeHandler(
+async function invokeHandler(
   handler: ToolHandler,
   args: Record<string, string>,
-  attempt: number
-): ToolResult<JSONValue> {
+  attempt: number,
+  sleep: (durationMs: number) => Promise<void>
+): Promise<ToolResult<JSONValue>> {
   try {
-    return handler(args, { attempt });
+    return await handler(args, { attempt, sleep });
   } catch (error) {
     return {
       ok: false,
@@ -194,6 +197,18 @@ const DEFAULT_TOOL_HANDLERS: ToolHandlerRegistry = {
       error: null
     };
   },
+  wait: async (args, context) => {
+    const delayMs = parseDelayMs(args.delayMs);
+    await context.sleep(delayMs);
+
+    return {
+      ok: true,
+      data: {
+        waitedMs: delayMs
+      },
+      error: null
+    };
+  },
   send_email: (args) => ({
     ok: true,
     data: {
@@ -245,3 +260,19 @@ const DEFAULT_TOOL_HANDLERS: ToolHandlerRegistry = {
     error: null
   })
 };
+
+function parseDelayMs(value: string | undefined): number {
+  const parsedValue = Number(value);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return 0;
+  }
+
+  return Math.min(Math.floor(parsedValue), 120_000);
+}
+
+function defaultSleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}

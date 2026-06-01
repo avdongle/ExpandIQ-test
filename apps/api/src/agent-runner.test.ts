@@ -166,6 +166,51 @@ describe("mock agent runner guards", () => {
       steps: []
     });
   });
+
+  it("terminates with timeout after a real slow-tool loop boundary", async () => {
+    const persistence = createMemoryPersistence();
+    let elapsedMs = 0;
+    const sleepDurations: number[] = [];
+    const clock: AgentClock = {
+      nowIso: () => "2026-05-31T01:00:00.000Z",
+      nowMs: () => elapsedMs
+    };
+
+    await executeMockAgentRun({
+      persistence,
+      runId: "run-slow-timeout",
+      goal: "Show the wall clock timeout demo",
+      clock,
+      sleep: async (durationMs) => {
+        sleepDurations.push(durationMs);
+        elapsedMs += durationMs;
+      },
+      timeoutMs: 60_000
+    });
+
+    expect(sleepDurations).toEqual([61_000]);
+    expect(persistence.readRun("run-slow-timeout")).toMatchObject({
+      status: "finished",
+      reason: "timeout",
+      totalCost: 0.001,
+      steps: [
+        expect.objectContaining({
+          kind: "tool_call",
+          args: { tool: "wait", args: { delayMs: "61000" }, cost: 0.001 },
+          result: {
+            ok: true,
+            data: { waitedMs: 61_000 },
+            error: null,
+            retry: {
+              attempts: 1,
+              recovered: false,
+              errors: []
+            }
+          }
+        })
+      ]
+    });
+  });
 });
 
 describe("mock agent runner retry behaviour", () => {

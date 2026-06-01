@@ -12,12 +12,13 @@ const assignmentToolIds = [
   "translate",
   "fetch_weather",
   "lookup_contact",
+  "wait",
   "web_search"
 ];
 
 describe("tool registry", () => {
   it("contains exactly the starter assignment tools", () => {
-    expect(TOOLS).toHaveLength(10);
+    expect(TOOLS).toHaveLength(11);
     expect(TOOLS.map((tool) => tool.id).sort()).toEqual([...assignmentToolIds].sort());
   });
 
@@ -62,11 +63,16 @@ describe("tool registry", () => {
     });
 
     for (const tool of TOOLS.filter(
-      (tool) => !["send_email", "create_calendar_event"].includes(tool.id)
+      (tool) => !["send_email", "create_calendar_event", "wait"].includes(tool.id)
     )) {
       expect(tool.idempotent).toBe(true);
       expect(tool.parallelSafe).toBe(true);
     }
+
+    expect(getToolById("wait")).toMatchObject({
+      idempotent: true,
+      parallelSafe: false
+    });
   });
 
   it("returns tools through deterministic lookup helpers", () => {

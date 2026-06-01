@@ -59,6 +59,10 @@ export function mockLlm(request: MockLlmRequest): MockLlmResponse {
     };
   }
 
+  if (scenario === "timeout") {
+    return toolCall(request.candidate_tools, "wait", { delayMs: "61000" }, 0.001);
+  }
+
   if (stepCount === 0) {
     return toolCall(request.candidate_tools, "fetch_doc", { docId: "default-doc" }, 0.002);
   }
@@ -70,7 +74,7 @@ export function mockLlm(request: MockLlmRequest): MockLlmResponse {
   };
 }
 
-function selectScenario(goal: string): "report" | "stuck" | "cost-cap" | "retry" | "default" {
+function selectScenario(goal: string): "report" | "stuck" | "cost-cap" | "retry" | "timeout" | "default" {
   const normalizedGoal = goal.toLowerCase();
 
   if (/\b(stuck|loop)\b/.test(normalizedGoal)) {
@@ -83,6 +87,14 @@ function selectScenario(goal: string): "report" | "stuck" | "cost-cap" | "retry"
 
   if (/\b(retry|transient)\b/.test(normalizedGoal)) {
     return "retry";
+  }
+
+  if (
+    /\b(timeout|slow|sleep|wait)\b/.test(normalizedGoal) ||
+    normalizedGoal.includes("wall clock") ||
+    normalizedGoal.includes("wall-clock")
+  ) {
+    return "timeout";
   }
 
   if (/\b(report|summary|docs)\b/.test(normalizedGoal)) {

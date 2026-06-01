@@ -96,6 +96,21 @@ Show:
 - The executor retries once and records retry metadata.
 - The run succeeds with a final answer.
 
+### Wall-Clock Timeout
+
+Goal:
+
+```text
+Show the wall clock timeout demo
+```
+
+Show:
+
+- The planner selects the deterministic `wait` tool.
+- The tool waits just over 60 seconds.
+- The next loop boundary terminates the run with `timeout`.
+- The UI explains the time-limit state in friendly language.
+
 ### Default Flow
 
 Goal:

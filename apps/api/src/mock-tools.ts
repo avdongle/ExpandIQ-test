@@ -81,6 +81,14 @@ export const TOOLS = [
     parallelSafe: true
   },
   {
+    id: "wait",
+    name: "Wait",
+    description: "Pause for a requested duration to demonstrate wall-clock timeout behaviour.",
+    keywords: ["wait", "timeout", "slow", "sleep", "wall", "clock", "delay"],
+    idempotent: true,
+    parallelSafe: false
+  },
+  {
     id: "web_search",
     name: "Web Search",
     description: "Search the web for public information.",

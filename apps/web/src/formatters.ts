@@ -57,6 +57,8 @@ export function formatStepActivity(step: RunStep): string {
       return "Looked up contact details.";
     case "send_email":
       return "Prepared an email through the mock tool.";
+    case "wait":
+      return "Waited long enough to hit the time limit.";
     default:
       return "Ran a tool step.";
   }

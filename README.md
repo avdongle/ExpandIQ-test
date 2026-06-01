@@ -82,7 +82,7 @@ See [docs/architecture.md](docs/architecture.md) for the full flow.
 - SQLite is used for local durable replay instead of Postgres to keep setup simple.
 - The mock LLM is deterministic and keyword-driven so tests can assert exact flows without network calls or model drift.
 - Tool retrieval is lexical and stable rather than embedding-based.
-- Runtime execution is synchronous for this exercise; polling exists in the frontend for future asynchronous backends.
+- Runtime execution is synchronous inside `POST /runs` for this exercise; polling exists in the frontend for future asynchronous backends.
 - Guards are local and explicit: step cap, cost cap, stuck detection, timeout, structured errors, and bounded retries.
 
 ADRs:
@@ -102,10 +102,13 @@ The Fastify server exposes:
 
 The route layer is deliberately thin. Request validation and local budget caps cover take-home abuse risk without adding auth, tenancy, shared rate limiting, or background infrastructure.
 
+Persisted steps include an explicit `cost` field alongside the argument and result JSON so read-back matches the assignment schema without requiring reviewers to inspect embedded payloads.
+
 ## Known Gaps
 
 - No real LLM integration, model provider SDK, external API calls, auth, Docker setup, deployment pipeline, queue, streaming updates, resume endpoint, or parallel tool execution.
 - API runs execute synchronously, so the frontend usually receives a completed run immediately after creation.
+- Timeout is loop-bound rather than cancellation-safe: it is checked before each planner call and intentionally does not interrupt an in-flight planner or tool handler.
 - SQLite uses Node's built-in `node:sqlite` module, which currently emits an experimental warning on some Node versions.
 - There is no migration framework or multi-process concurrency model.
 - Retrieval is deterministic and explainable, but it cannot infer intent outside the tool registry vocabulary.

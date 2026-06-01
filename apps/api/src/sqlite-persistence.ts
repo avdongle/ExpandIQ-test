@@ -26,6 +26,7 @@ export type StepRecord = {
   runId: string;
   stepNumber: number;
   kind: string;
+  cost: number;
   args: JSONValue;
   result: JSONValue;
   startedAt: string;
@@ -47,6 +48,7 @@ export type PersistStepInput = {
   runId: string;
   stepNumber: number;
   kind: string;
+  cost?: number;
   args: JSONValue;
   result: JSONValue;
   startedAt?: string;
@@ -90,6 +92,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
       run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
       step_number INTEGER NOT NULL,
       kind TEXT NOT NULL,
+      cost REAL NOT NULL DEFAULT 0,
       args_json TEXT NOT NULL,
       result_json TEXT NOT NULL,
       started_at TEXT NOT NULL,
@@ -98,6 +101,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
     );
   `);
   ensureRunsFinalAnswerColumn(db);
+  ensureStepsCostColumn(db);
 
   return {
     createRun(input) {
@@ -134,6 +138,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
         runId: input.runId,
         stepNumber: input.stepNumber,
         kind: input.kind,
+        cost: input.cost ?? 0,
         args: input.args,
         result: input.result,
         startedAt: input.startedAt ?? new Date().toISOString(),
@@ -141,12 +146,13 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
       };
 
       db.prepare(
-        "INSERT INTO steps (id, run_id, step_number, kind, args_json, result_json, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO steps (id, run_id, step_number, kind, cost, args_json, result_json, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).run(
         step.id,
         step.runId,
         step.stepNumber,
         step.kind,
+        step.cost,
         serializeJSONValue(step.args),
         serializeJSONValue(step.result),
         step.startedAt,
@@ -196,7 +202,7 @@ export function createSQLitePersistence(location: string): SQLitePersistence {
 
       const steps = db
         .prepare(
-          "SELECT id, run_id, step_number, kind, args_json, result_json, started_at, finished_at FROM steps WHERE run_id = ? ORDER BY step_number ASC"
+          "SELECT id, run_id, step_number, kind, cost, args_json, result_json, started_at, finished_at FROM steps WHERE run_id = ? ORDER BY step_number ASC"
         )
         .all(runId)
         .map(toStepRecord);
@@ -229,6 +235,15 @@ function ensureRunsFinalAnswerColumn(db: DatabaseSync): void {
   }
 }
 
+function ensureStepsCostColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(steps)").all();
+  const hasCost = columns.some((row) => readString(row, "name") === "cost");
+
+  if (!hasCost) {
+    db.exec("ALTER TABLE steps ADD COLUMN cost REAL NOT NULL DEFAULT 0;");
+  }
+}
+
 function toRunRecord(row: SQLiteRow): RunRecord {
   const status = readString(row, "status");
   if (status !== "running" && status !== "finished") {
@@ -253,6 +268,7 @@ function toStepRecord(row: SQLiteRow): StepRecord {
     runId: readString(row, "run_id"),
     stepNumber: readNumber(row, "step_number"),
     kind: readString(row, "kind"),
+    cost: readNumber(row, "cost"),
     args: parseJSONValue(readString(row, "args_json")),
     result: parseJSONValue(readString(row, "result_json")),
     startedAt: readString(row, "started_at"),

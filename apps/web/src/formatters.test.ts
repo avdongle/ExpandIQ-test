@@ -47,6 +47,7 @@ function step(args: RunStep["args"]): RunStep {
     run_id: "run-1",
     step_number: 1,
     kind: "tool_call",
+    cost: 0.001,
     args,
     result: { ok: true },
     started_at: "2026-05-31T01:00:00.000Z",

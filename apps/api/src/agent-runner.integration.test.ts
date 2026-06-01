@@ -233,8 +233,8 @@ describe("mock agent runner", () => {
     });
 
     expect(candidateToolIds).toEqual([
-      ["search_docs", "fetch_doc"],
-      ["search_docs", "fetch_doc"]
+      ["search_docs", "create_calendar_event"],
+      ["search_docs", "create_calendar_event"]
     ]);
     expect(candidateToolIds.every((ids) => ids.length < TOOLS.length)).toBe(true);
 

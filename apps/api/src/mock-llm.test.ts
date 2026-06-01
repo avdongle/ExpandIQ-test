@@ -136,6 +136,7 @@ function step(
     runId: "run-1",
     stepNumber,
     kind: "tool_call",
+    cost: 0.001,
     args: { tool, args, cost: 0.001 },
     result: { ok: true },
     startedAt: "2026-05-31T01:00:00.000Z",

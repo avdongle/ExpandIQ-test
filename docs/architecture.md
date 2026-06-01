@@ -69,7 +69,7 @@ Semantic failures such as unknown tools and validation errors are not retried.
 SQLite stores:
 
 - `runs`: goal, status, terminal reason, total cost, final answer, start time, and finish time.
-- `steps`: ordered step number, kind, arguments, result JSON, start time, and finish time.
+- `steps`: ordered step number, kind, explicit cost, arguments, result JSON, start time, and finish time.
 
 `listRuns` returns newest runs first. `readRun` returns a run with ordered steps for deterministic replay.
 
@@ -86,7 +86,7 @@ Runs always finish with one terminal reason:
 - `timeout`: the runtime exceeded the configured elapsed time before the next planner call.
 - `error`: planner failure or non-recoverable tool result.
 
-Guard ordering is deterministic: timeout before planner call, cost accumulation after planner response, cost cap before dispatch or final persistence, tool execution and persistence, then stuck detection.
+Guard ordering is deterministic: timeout before planner call, cost accumulation after planner response, cost cap before dispatch or final persistence, tool execution and persistence, then stuck detection. Timeout is checked between loop iterations with the injected clock; the runtime does not attempt cancellation-safe interruption of an in-flight planner or tool handler.
 
 ## Frontend
 
@@ -99,14 +99,14 @@ The frontend provides the required minimal workflow:
 - list previous runs;
 - inspect ordered step details.
 
-The backend currently executes synchronously, so the frontend normally loads the completed run immediately. Polling remains in place for any future backend that reports `running` after creation.
+The backend currently executes synchronously inside `POST /runs`, so the frontend normally loads the completed run immediately. Polling remains in place for any future backend that reports `running` after creation.
 
 ## Production Patterns Considered, Intentionally Scoped Down
 
 - API gateway: represented by a thin Fastify boundary with request validation. Auth, tenancy, and gateway policy are out of scope.
 - Budget guards: implemented locally with max steps, max cost, timeout, stuck detection, and retry limits.
 - Circuit breakers: approximated by recoverable vs semantic tool errors, bounded retries, and structured failures.
-- Queueing: useful for long-running jobs, but omitted to preserve deterministic synchronous review.
+- Queueing: useful for long-running jobs, but omitted to preserve deterministic synchronous review and avoid background infrastructure outside the take-home scope.
 - Caching: possible future work for retrieval or deterministic tool outputs, but not needed for the small registry.
 - Scaling: not addressed; this is a single-node local exercise.
 

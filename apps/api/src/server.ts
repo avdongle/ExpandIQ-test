@@ -232,6 +232,7 @@ function toStepDto(step: StepRecord): {
   run_id: string;
   step_number: number;
   kind: string;
+  cost: number;
   args: JSONValue;
   result: JSONValue;
   started_at: string;
@@ -242,6 +243,7 @@ function toStepDto(step: StepRecord): {
     run_id: step.runId,
     step_number: step.stepNumber,
     kind: step.kind,
+    cost: step.cost,
     args: step.args,
     result: step.result,
     started_at: step.startedAt,

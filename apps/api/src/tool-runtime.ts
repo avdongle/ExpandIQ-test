@@ -202,5 +202,46 @@ const DEFAULT_TOOL_HANDLERS: ToolHandlerRegistry = {
       idempotencyKey: args.idempotency_key ?? null
     },
     error: null
+  }),
+  create_calendar_event: (args) => ({
+    ok: true,
+    data: {
+      eventId: "event-1",
+      title: args.title ?? "Untitled event",
+      startsAt: args.startsAt ?? null,
+      idempotencyKey: args.idempotency_key ?? null
+    },
+    error: null
+  }),
+  translate: (args) => ({
+    ok: true,
+    data: {
+      sourceLanguage: args.sourceLanguage ?? "en",
+      targetLanguage: args.targetLanguage ?? "es",
+      translatedText: `Translated(${args.targetLanguage ?? "es"}): ${args.text ?? ""}`
+    },
+    error: null
+  }),
+  fetch_weather: (args) => ({
+    ok: true,
+    data: {
+      location: args.location ?? "unknown",
+      forecast: "Mild with light wind",
+      temperatureC: 21
+    },
+    error: null
+  }),
+  web_search: (args) => ({
+    ok: true,
+    data: {
+      query: args.query ?? null,
+      results: [
+        {
+          title: "Deterministic web result",
+          url: "https://example.com/deterministic-result"
+        }
+      ]
+    },
+    error: null
   })
 };

@@ -186,10 +186,10 @@ describe("runs API routes", () => {
           "Report complete: searched docs, fetched source material, and summarised the findings."
       },
       steps: [
-        { step_number: 1, kind: "tool_call" },
-        { step_number: 2, kind: "tool_call" },
-        { step_number: 3, kind: "tool_call" },
-        { step_number: 4, kind: "final" }
+        { step_number: 1, kind: "tool_call", cost: 0.002 },
+        { step_number: 2, kind: "tool_call", cost: 0.002 },
+        { step_number: 3, kind: "tool_call", cost: 0.003 },
+        { step_number: 4, kind: "final", cost: 0.001 }
       ]
     });
   });

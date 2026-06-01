@@ -12,6 +12,54 @@ import type {
 } from "./sqlite-persistence.js";
 
 describe("mock agent runner guards", () => {
+  it("uses documented max step and max cost defaults", async () => {
+    const stepCapPersistence = createMemoryPersistence();
+    let plannerCalls = 0;
+
+    await executeMockAgentRun({
+      persistence: stepCapPersistence,
+      runId: "run-default-step-cap",
+      goal: "Fetch docs until the documented default step cap",
+      mockLlm() {
+        plannerCalls += 1;
+
+        return {
+          type: "tool_call",
+          tool: "fetch_doc",
+          args: { docId: `doc-${plannerCalls}` },
+          cost: 0.001
+        };
+      }
+    });
+
+    expect(stepCapPersistence.readRun("run-default-step-cap")).toMatchObject({
+      reason: "step_cap",
+      totalCost: 0.02
+    });
+    expect(stepCapPersistence.readRun("run-default-step-cap")?.steps).toHaveLength(20);
+
+    const costCapPersistence = createMemoryPersistence();
+    await executeMockAgentRun({
+      persistence: costCapPersistence,
+      runId: "run-default-cost-cap",
+      goal: "Run default budget cap",
+      mockLlm() {
+        return {
+          type: "tool_call",
+          tool: "fetch_doc",
+          args: { docId: "expensive-doc" },
+          cost: 0.5
+        };
+      }
+    });
+
+    expect(costCapPersistence.readRun("run-default-cost-cap")).toMatchObject({
+      reason: "cost_cap",
+      totalCost: 0.5,
+      steps: []
+    });
+  });
+
   it("terminates with step cap after the configured number of tool calls", async () => {
     const persistence = createMemoryPersistence();
     let plannerCalls = 0;
@@ -225,6 +273,7 @@ function createMemoryPersistence(): SQLitePersistence {
         runId: input.runId,
         stepNumber: input.stepNumber,
         kind: input.kind,
+        cost: input.cost ?? 0,
         args: input.args,
         result: input.result,
         startedAt: input.startedAt ?? "2026-05-31T01:00:00.000Z",

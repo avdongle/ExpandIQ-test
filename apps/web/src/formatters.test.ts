@@ -21,6 +21,9 @@ describe("formatStepActivity", () => {
     expect(formatStepActivity(step({ tool: "search_docs", args: { query: "report" } }))).toBe(
       "Searched the docs for relevant material."
     );
+    expect(formatStepActivity(step({ tool: "wait", args: { delayMs: "61000" } }))).toBe(
+      "Waited long enough to hit the time limit."
+    );
   });
 
   it("keeps unknown tools friendly instead of exposing raw JSON", () => {

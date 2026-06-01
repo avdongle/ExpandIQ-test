@@ -124,6 +124,21 @@ describe("mock LLM scenarios", () => {
       cost: 0.001
     });
   });
+
+  it("emits a slow wait call for the timeout demo", () => {
+    expect(
+      mockLlm({
+        goal: "Show the wall clock timeout demo",
+        past_steps: [],
+        candidate_tools: TOOLS
+      })
+    ).toEqual({
+      type: "tool_call",
+      tool: "wait",
+      args: { delayMs: "61000" },
+      cost: 0.001
+    });
+  });
 });
 
 function step(

@@ -304,6 +304,40 @@ describe("mock agent runner", () => {
     persistence.close();
   });
 
+  it("terminates the slow wait demo with timeout after the tool returns", async () => {
+    const persistence = createSQLitePersistence(":memory:");
+    let elapsedMs = 0;
+
+    await executeMockAgentRun({
+      persistence,
+      runId: "run-slow-timeout-demo",
+      goal: "Show the wall clock timeout demo",
+      timeoutMs: 60_000,
+      clock: {
+        nowIso: () => "2026-05-31T01:00:00.000Z",
+        nowMs: () => elapsedMs
+      },
+      sleep: async (durationMs) => {
+        elapsedMs += durationMs;
+      }
+    });
+
+    const run = persistence.readRun("run-slow-timeout-demo");
+    expect(run).toMatchObject({
+      status: "finished",
+      reason: "timeout",
+      totalCost: 0.001
+    });
+    expect(run?.steps).toHaveLength(1);
+    expect(run?.steps[0]?.args).toEqual({
+      tool: "wait",
+      args: { delayMs: "61000" },
+      cost: 0.001
+    });
+
+    persistence.close();
+  });
+
   it("does not retry non-recoverable tool errors", async () => {
     const persistence = createSQLitePersistence(":memory:");
 

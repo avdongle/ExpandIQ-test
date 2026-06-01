@@ -64,6 +64,7 @@ Use these goals to exercise the deterministic scenarios:
 - `This loop is stuck`: repeated tool call until the stuck guard fires.
 - `Run an expensive budget test`: cost-cap termination.
 - `Handle a transient retry case`: recoverable tool error followed by retry success.
+- `Show the wall clock timeout demo`: waits just over 60 seconds, then terminates with the timeout guard.
 - `Fetch the default document`: default one-tool run and final answer.
 
 ## Architecture Summary
@@ -84,6 +85,7 @@ See [docs/architecture.md](docs/architecture.md) for the full flow.
 - Tool retrieval is lexical and stable rather than embedding-based.
 - Runtime execution is synchronous inside `POST /runs` for this exercise; polling exists in the frontend for future asynchronous backends.
 - Guards are local and explicit: step cap, cost cap, stuck detection, timeout, structured errors, and bounded retries.
+- The timeout demo uses a deterministic `wait` tool so reviewers can see the 60-second wall-clock path without external services.
 
 ADRs:
 
@@ -108,7 +110,7 @@ Persisted steps include an explicit `cost` field alongside the argument and resu
 
 - No real LLM integration, model provider SDK, external API calls, auth, Docker setup, deployment pipeline, queue, streaming updates, resume endpoint, or parallel tool execution.
 - API runs execute synchronously, so the frontend usually receives a completed run immediately after creation.
-- Timeout is loop-bound rather than cancellation-safe: it is checked before each planner call and intentionally does not interrupt an in-flight planner or tool handler.
+- Timeout is loop-bound rather than cancellation-safe: it is checked before each planner call and intentionally does not interrupt an in-flight planner or tool handler. The `Show the wall clock timeout demo` goal waits for a tool to return, then stops on the next loop boundary.
 - SQLite uses Node's built-in `node:sqlite` module, which currently emits an experimental warning on some Node versions.
 - There is no migration framework or multi-process concurrency model.
 - Retrieval is deterministic and explainable, but it cannot infer intent outside the tool registry vocabulary.

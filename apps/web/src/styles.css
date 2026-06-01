@@ -225,16 +225,16 @@ button:disabled {
 .final-answer {
   border-left: 5px solid #17634f;
   border-radius: 8px;
-  padding: 18px;
+  padding: 22px;
   color: #102a22;
   background: #eaf6f0;
 }
 
 .final-answer p {
   margin-bottom: 0;
-  font-size: 1.35rem;
+  font-size: 2.25rem;
   font-weight: 800;
-  line-height: 1.35;
+  line-height: 1.18;
 }
 
 .timeline {
@@ -342,5 +342,9 @@ pre {
 
   .goal-row button {
     min-height: 46px;
+  }
+
+  .final-answer p {
+    font-size: 1.75rem;
   }
 }

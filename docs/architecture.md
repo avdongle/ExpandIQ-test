@@ -46,6 +46,7 @@ The mock planner selects scenarios from goal keywords:
 - `stuck` or `loop`: repeat the same `fetch_doc` call until stuck detection terminates.
 - `expensive`, `budget`, or `cost cap`: emit costly SQL calls so the budget guard can terminate.
 - `retry` or `transient`: trigger a recoverable contact lookup and then finish.
+- `timeout`, `slow`, `sleep`, `wait`, or `wall clock`: call the deterministic wait tool for just over 60 seconds so the next loop boundary terminates with `timeout`.
 - anything else: fetch a default document and finish.
 
 The planner rejects tool calls that are not present in the retrieved candidate set. That makes retrieval quality visible during tests instead of silently bypassing the retriever.
@@ -86,7 +87,7 @@ Runs always finish with one terminal reason:
 - `timeout`: the runtime exceeded the configured elapsed time before the next planner call.
 - `error`: planner failure or non-recoverable tool result.
 
-Guard ordering is deterministic: timeout before planner call, cost accumulation after planner response, cost cap before dispatch or final persistence, tool execution and persistence, then stuck detection. Timeout is checked between loop iterations with the injected clock; the runtime does not attempt cancellation-safe interruption of an in-flight planner or tool handler.
+Guard ordering is deterministic: timeout before planner call, cost accumulation after planner response, cost cap before dispatch or final persistence, tool execution and persistence, then stuck detection. Timeout is checked between loop iterations with the injected clock; the runtime does not attempt cancellation-safe interruption of an in-flight planner or tool handler. The timeout demo makes this visible by waiting just over 60 seconds inside a tool, then stopping at the following loop boundary.
 
 ## Frontend
 

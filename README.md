@@ -119,4 +119,6 @@ Details are recorded in [docs/ai-assist-log.md](docs/ai-assist-log.md). The prom
 
 ## Handover
 
-Use [docs/walkthrough.md](docs/walkthrough.md) for the reviewer walkthrough and live demo sequence. Use [docs/review.md](docs/review.md) for the current checklist status and remaining risks.
+Use [docs/final-review.md](docs/final-review.md) for the submission readiness review and requirement evidence. Use [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for the panel walkthrough and live demo sequence.
+
+Earlier review notes remain in [docs/review.md](docs/review.md) and the shorter walkthrough remains in [docs/walkthrough.md](docs/walkthrough.md).

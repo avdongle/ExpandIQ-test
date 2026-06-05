@@ -86,6 +86,29 @@ describe("App", () => {
     expect(screen.getAllByText("Succeeded").length).toBeGreaterThan(0);
   });
 
+  it("presents capped terminal states with human-readable treatment", async () => {
+    const costCappedRun: RunSummary = {
+      ...finishedRun,
+      reason: "cost_cap",
+      final_answer: null
+    };
+    mockFetch([
+      jsonResponse<RunsResponse>({ runs: [costCappedRun], pagination: pagination(1) }),
+      jsonResponse<RunDetail>({ run: costCappedRun, steps: [toolStep] })
+    ]);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Create a report from the docs/ }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Budget held").length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByText("The run stopped after reaching the $0.50 budget.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("cost_cap")).toBeNull();
+  });
+
   it("maps HTTP failures to friendly user-facing messages", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mockFetch([

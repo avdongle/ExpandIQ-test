@@ -4,9 +4,11 @@ import { ApiClientError, createRun, getRun, listRuns } from "./api.js";
 import {
   formatJsonDetails,
   formatRelativeTime,
-  formatRunOutcome,
+  formatRunStatusLabel,
+  formatStepResultSummary,
   formatStepActivity,
-  formatTerminalReason
+  formatTerminalReason,
+  getRunStatusTone
 } from "./formatters.js";
 import type { RunDetail, RunStep, RunSummary } from "./types.js";
 
@@ -76,11 +78,12 @@ export function App(): ReactElement {
   const finalAnswer = selectedRunSummary?.final_answer;
   const statusMessage = useMemo(() => {
     if (selectedRunSummary === null) {
-      return "No run selected.";
+      return "Ready for a deterministic run.";
     }
 
-    return formatRunOutcome(selectedRunSummary);
+    return formatRunStatusLabel(selectedRunSummary);
   }, [selectedRunSummary]);
+  const selectedTone = getRunStatusTone(selectedRunSummary);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -114,15 +117,26 @@ export function App(): ReactElement {
         <div className="masthead">
           <div>
             <p className="eyebrow">ExpandIQ AgentKit</p>
-            <h1 id="app-title">Agent run workspace</h1>
+            <h1 id="app-title">AgentKit</h1>
+            <p className="masthead-copy">
+              Run deterministic AI tool workflows with visible steps and safety guards.
+            </p>
+            <div className="capability-row" aria-label="Runtime characteristics">
+              <span>Mock LLM</span>
+              <span>Local runtime</span>
+              <span>Deterministic</span>
+            </div>
           </div>
-          <span className="status-pill" aria-live="polite">
+          <span className={`status-pill tone-${selectedTone}`} aria-live="polite">
             {statusMessage}
           </span>
         </div>
 
         <form className="goal-form" onSubmit={(event) => void handleSubmit(event)}>
-          <label htmlFor="goal">Goal</label>
+          <div className="form-heading">
+            <label htmlFor="goal">Describe the goal</label>
+            <span>AgentKit will plan, run tools, and show the trace.</span>
+          </div>
           <div className="goal-row">
             <textarea
               id="goal"
@@ -130,11 +144,11 @@ export function App(): ReactElement {
               rows={3}
               value={goal}
               onChange={(event) => setGoal(event.target.value)}
-              placeholder="Create a report from the docs"
+              placeholder="Ask the agent to fetch a document, look up a contact, or recover from a transient error..."
               aria-describedby={goalError === null ? undefined : "goal-error"}
             />
             <button type="submit" disabled={creating}>
-              {creating ? "Creating run" : "Start run"}
+              {creating ? "Starting" : "Start run"}
             </button>
           </div>
           {goalError === null ? null : (
@@ -152,16 +166,25 @@ export function App(): ReactElement {
 
         <section className="run-panel" aria-labelledby="run-heading" aria-live="polite">
           <div className="panel-heading">
-            <h2 id="run-heading">Selected run</h2>
+            <div>
+              <p className="section-kicker">Active workflow</p>
+              <h2 id="run-heading">Selected run</h2>
+            </div>
             {selectedRunSummary === null ? null : (
-              <span className="muted">Cost ${selectedRunSummary.total_cost.toFixed(3)}</span>
+              <span className="cost-badge">Cost ${selectedRunSummary.total_cost.toFixed(3)}</span>
             )}
           </div>
 
           {detailState === "loading" && selectedRun === null ? (
-            <p className="empty-state">Loading run details...</p>
+            <p className="empty-state">Loading the workflow trace...</p>
           ) : selectedRun === null ? (
-            <p className="empty-state">Start a run or choose a previous run.</p>
+            <div className="empty-state empty-panel">
+              <strong>Start by describing a goal.</strong>
+              <span>
+                AgentKit will run a deterministic tool-calling workflow and show each step as it
+                happens.
+              </span>
+            </div>
           ) : (
             <RunDetailView
               run={selectedRun.run}
@@ -175,7 +198,10 @@ export function App(): ReactElement {
 
       <aside className="history-panel" aria-labelledby="history-heading">
         <div className="panel-heading">
-          <h2 id="history-heading">Past runs</h2>
+          <div>
+            <p className="section-kicker">History</p>
+            <h2 id="history-heading">Past runs</h2>
+          </div>
           <button className="secondary-button" type="button" onClick={() => void refreshRuns()}>
             Refresh
           </button>
@@ -198,7 +224,9 @@ export function App(): ReactElement {
                 >
                   <span className="run-goal">{run.goal}</span>
                   <span className="run-meta">
-                    <span>{formatRunOutcome(run)}</span>
+                    <span className={`mini-status tone-${getRunStatusTone(run)}`}>
+                      {formatRunStatusLabel(run)}
+                    </span>
                     <span>{formatRelativeTime(run.finished_at ?? run.started_at)}</span>
                   </span>
                 </button>
@@ -224,13 +252,16 @@ function RunDetailView({
 }): ReactElement {
   return (
     <div className="run-detail">
-      <div>
-        <p className="run-title">{run.goal}</p>
-        <p className="terminal-message">
-          {isFinished
-            ? formatTerminalReason(run.reason)
-            : "The API reports this run is still in progress."}
-        </p>
+      <div className="run-summary-card">
+        <div>
+          <p className="run-title">{run.goal}</p>
+          <p className="terminal-message">
+            {isFinished ? formatTerminalReason(run.reason) : formatTerminalReason(null)}
+          </p>
+        </div>
+        <span className={`status-pill tone-${getRunStatusTone(run)}`}>
+          {formatRunStatusLabel(run)}
+        </span>
       </div>
 
       {finalAnswer === null || finalAnswer === undefined ? null : (
@@ -246,12 +277,18 @@ function RunDetailView({
         <ol className="timeline">
           {steps.map((step) => (
             <li key={step.id}>
-              <div>
-                <p>{formatStepActivity(step)}</p>
-                <span className="muted">Step {step.step_number}</span>
+              <div className="timeline-row">
+                <span className="step-index">{step.step_number}</span>
+                <div className="step-copy">
+                  <p>{formatStepActivity(step)}</p>
+                  <span className="muted">
+                    Step {step.step_number} · {step.kind} · Cost ${step.cost.toFixed(3)}
+                  </span>
+                  <span className="step-summary">{formatStepResultSummary(step)}</span>
+                </div>
               </div>
               <details>
-                <summary>Raw details</summary>
+                <summary>View raw step details</summary>
                 <pre>{formatJsonDetails({ args: step.args, result: step.result })}</pre>
               </details>
             </li>

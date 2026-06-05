@@ -28,14 +28,14 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
+    await user.type(screen.getByLabelText("Describe the goal"), "Create a report from the docs");
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
     expect(await screen.findByText("Report complete.")).toBeTruthy();
     expect(screen.getByLabelText("Final answer")).toBeTruthy();
-    expect(screen.getByText("Searched the docs for relevant material.")).toBeTruthy();
+    expect(screen.getByText("Searching documents")).toBeTruthy();
     expect(screen.getByText("Prepared the final answer.")).toBeTruthy();
-    expect(screen.queryByText("The run is working through its plan.")).toBeNull();
+    expect(screen.queryByText("The agent is working through the next tool step.")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/runs/run-1", undefined);
     expect(fetchMock).toHaveBeenCalledWith(
       "/runs",
@@ -64,11 +64,11 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
+    await user.type(screen.getByLabelText("Describe the goal"), "Create a report from the docs");
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
     expect(await screen.findByText("Report complete.")).toBeTruthy();
-    expect(screen.getByText("Searched the docs for relevant material.")).toBeTruthy();
+    expect(screen.getByText("Searching documents")).toBeTruthy();
   });
 
   it("lists past runs and loads a selected run", async () => {
@@ -84,6 +84,59 @@ describe("App", () => {
 
     expect(await screen.findByText("Report complete.")).toBeTruthy();
     expect(screen.getAllByText("Succeeded").length).toBeGreaterThan(0);
+    expect(screen.getByText("Tool completed successfully.")).toBeTruthy();
+    expect(screen.getAllByText("View raw step details").length).toBeGreaterThan(0);
+  });
+
+  it("renders the intentional empty state before a run is selected", async () => {
+    mockFetch([jsonResponse<RunsResponse>({ runs: [], pagination: pagination(0) })]);
+
+    render(<App />);
+
+    expect(await screen.findByText("No past runs yet.")).toBeTruthy();
+    expect(screen.getByText("Start by describing a goal.")).toBeTruthy();
+    expect(
+      screen.getByText(/AgentKit will run a deterministic tool-calling workflow/)
+    ).toBeTruthy();
+  });
+
+  it("renders terminal reasons as human-readable labels and messages", async () => {
+    const costCapRun: RunSummary = {
+      ...finishedRun,
+      id: "run-cost",
+      reason: "cost_cap",
+      final_answer: null
+    };
+    mockFetch([
+      jsonResponse<RunsResponse>({ runs: [costCapRun], pagination: pagination(1) }),
+      jsonResponse<RunDetail>({ run: costCapRun, steps: [] })
+    ]);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Create a report from the docs/ }));
+
+    expect((await screen.findAllByText("Reached budget")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/reaching the \$0.50 budget limit/)).toBeTruthy();
+  });
+
+  it("disables duplicate submissions while a run is being created", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse<RunsResponse>({ runs: [], pagination: pagination(0) }))
+      .mockImplementationOnce(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Describe the goal"), "Create a report from the docs");
+    await user.click(screen.getByRole("button", { name: "Start run" }));
+
+    expect((screen.getByRole("button", { name: "Starting" }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
   });
 
   it("maps HTTP failures to friendly user-facing messages", async () => {
@@ -96,7 +149,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
+    await user.type(screen.getByLabelText("Describe the goal"), "Create a report from the docs");
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
     const alert = await screen.findByRole("alert");
@@ -104,7 +157,7 @@ describe("App", () => {
     expect(alert.textContent).not.toContain("backend unavailable");
     expect(alert.textContent).not.toContain("Request failed with status");
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Creating run" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Starting" })).toBeNull();
     });
   });
 
@@ -119,7 +172,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.type(screen.getByLabelText("Goal"), "Create a report from the docs");
+    await user.type(screen.getByLabelText("Describe the goal"), "Create a report from the docs");
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
     const alert = await screen.findByRole("alert");
@@ -132,7 +185,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByLabelText("Goal")).toBeTruthy();
+    expect(screen.getByLabelText("Describe the goal")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start run" })).toBeTruthy();
     expect(await screen.findByText("No past runs yet.")).toBeTruthy();
   });
